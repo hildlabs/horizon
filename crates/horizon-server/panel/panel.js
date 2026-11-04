@@ -335,6 +335,7 @@ function renderCharts() {
 function renderOnline() {
   const players = onlinePlayers();
   $("nav-players").textContent = state.status && state.status.sample && state.status.sample.game ? String(players.length) : "";
+  $("tab-online").textContent = String(players.length);
   fill("overview-players", "overview-no-players", players.slice(0, 6).map((p) => h("li", {}, avatar(p.name), h("span", { class: "row-main" }, h("b", {}, p.name), isOp(p.name) && h("small", {}, "Operator")), ping(p.ping_ms))));
   if (page === "players") renderPlayers();
 }
@@ -365,6 +366,8 @@ function isOp(name) {
   return Boolean(state.players && state.players.ops.some((o) => o.name.toLowerCase() === name.toLowerCase()));
 }
 
+let playerTab = "online";
+
 async function kick(name) {
   const answer = await ask({ title: `Kick ${name}?`, text: "They can join again straight away.", ok: "Kick", danger: true, fields: [{ name: "reason", label: "Reason (optional)", placeholder: "Shown to the player" }] });
   if (answer) await act("POST", "/api/v1/players/kick", { name, reason: answer.reason || undefined }, `Kicked ${name}.`);
@@ -394,8 +397,22 @@ function renderPlayers() {
       button("Ban", () => ban(p.name), { kind: "destructive" })),
   )));
   if (!lists) return;
+  $("tab-whitelist").textContent = String(lists.whitelist.players.length);
+  $("tab-ops").textContent = String(lists.ops.length);
+  $("tab-bans").textContent = String(lists.bans.length + lists.ip_bans.length);
+  $("whitelist-on").checked = lists.whitelist.enabled;
+  fill("whitelist", "whitelist-none", lists.whitelist.players.map((p) => h(
+    "li", {}, avatar(p.name), h("span", { class: "row-main" }, h("b", {}, p.name), h("small", { class: "mono" }, p.uuid || "")),
+    h("span", { class: "row-actions" }, button("Remove", async () => {
+      if (await act("POST", "/api/v1/whitelist/remove", { name: p.name }, `Took ${p.name} off the whitelist.`)) refreshLists();
+    }, { kind: "ghost" })),
+  )));
+  fill("ops", "ops-none", lists.ops.map((p) => h(
+    "li", {}, avatar(p.name), h("span", { class: "row-main" }, h("b", {}, p.name), h("small", {}, `Permission level ${p.level}`)),
+    h("span", { class: "row-actions" }, button("Deop", () => toggleOp(p.name), { kind: "ghost" })),
+  )));
   const banRow = (title, detail, tag, pardon) => h(
-    "li", {}, h("span", { class: "file-icon" }, icon("user")),
+    "li", {}, h("span", { class: "file-icon" }, icon(tag === "IP" ? "globe-02" : "user")),
     h("span", { class: "row-main" }, h("b", {}, title), h("small", {}, detail)),
     h("span", { class: "tag danger" }, tag),
     h("span", { class: "row-actions" }, button("Pardon", pardon, { kind: "ghost" })),
@@ -405,7 +422,16 @@ function renderPlayers() {
     ...lists.bans.map((b) => banRow(b.name, since(b), "Player", async () => {
       if (await act("POST", "/api/v1/players/pardon", { name: b.name }, `Pardoned ${b.name}.`)) refreshLists();
     })),
+    ...lists.ip_bans.map((b) => banRow(b.ip, since(b), "IP", async () => {
+      if (await act("POST", "/api/v1/players/pardon-ip", { ip: b.ip }, `Pardoned ${b.ip}.`)) refreshLists();
+    })),
   ]);
+}
+
+function selectTab(tab) {
+  playerTab = tab;
+  for (const b of document.querySelectorAll("#player-tabs button")) b.setAttribute("aria-selected", String(b.dataset.tab === tab));
+  for (const p of document.querySelectorAll("[data-tab-panel]")) p.hidden = p.dataset.tabPanel !== tab;
 }
 
 // --- Console --------------------------------------------------------------------------------------------
@@ -630,11 +656,30 @@ function setUp() {
   });
 
   // Players.
+  for (const b of document.querySelectorAll("#player-tabs button")) b.addEventListener("click", () => selectTab(b.dataset.tab));
+  $("whitelist-on").addEventListener("change", async (event) => {
+    const enabled = event.target.checked;
+    if (!(await act("POST", "/api/v1/whitelist", { enabled }, enabled ? "The whitelist is on." : "The whitelist is off."))) event.target.checked = !enabled;
+    refreshLists();
+  });
+  const nameForm = (id, path, done) => $(id).addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const name = event.target.name.value.trim();
+    if (name && (await act("POST", path, { name }, done(name)))) {
+      event.target.reset();
+      refreshLists();
+    }
+  });
+  nameForm("whitelist-form", "/api/v1/whitelist/add", (n) => `Added ${n} to the whitelist.`);
+  nameForm("op-form", "/api/v1/players/op", (n) => `${n} is now an operator.`);
   $("ban-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const target = event.target.target.value.trim();
     const reason = event.target.reason.value.trim() || undefined;
-    const reply = await act("POST", "/api/v1/players/ban", { name: target, reason }, `Banned ${target}.`);
+    const ip = /^[\d.]+$|:/.test(target);
+    const reply = ip
+      ? await act("POST", "/api/v1/players/ban-ip", { ip: target, reason }, `Banned ${target}.`)
+      : await act("POST", "/api/v1/players/ban", { name: target, reason }, `Banned ${target}.`);
     if (reply) {
       event.target.reset();
       refreshLists();

@@ -119,16 +119,41 @@
 
     <!-- Players -->
     <section class="page" data-page="players" hidden>
-      <article class="plate card">
-        <header class="card-head"><h2>Online</h2></header>
+      <div class="tabs" role="tablist" id="player-tabs">
+        <button type="button" role="tab" data-tab="online" aria-selected="true">Online <span id="tab-online"></span></button>
+        <button type="button" role="tab" data-tab="whitelist" aria-selected="false">Whitelist <span id="tab-whitelist"></span></button>
+        <button type="button" role="tab" data-tab="ops" aria-selected="false">Operators <span id="tab-ops"></span></button>
+        <button type="button" role="tab" data-tab="bans" aria-selected="false">Bans <span id="tab-bans"></span></button>
+      </div>
+
+      <article class="plate card" data-tab-panel="online">
         <ul class="rows" id="players-online"></ul>
         <p class="empty" id="players-none">Nobody is online. Players show up here as they join.</p>
       </article>
 
-      <article class="plate card">
-        <header class="card-head"><h2>Banned players</h2></header>
+      <article class="plate card" data-tab-panel="whitelist" hidden>
+        <label class="switch-row"><span><b>Only listed players can join</b><small class="faint">Operators can always join.</small></span>
+          <input type="checkbox" role="switch" id="whitelist-on" class="switch"></label>
+        <form class="inline-form" id="whitelist-form">
+          <input name="name" placeholder="Player name" maxlength="16" required autocomplete="off" spellcheck="false" aria-label="Player name">
+          <button type="submit"><svg><use href="#i-plus-sign"/></svg>Add</button>
+        </form>
+        <ul class="rows" id="whitelist"></ul>
+        <p class="empty" id="whitelist-none">Nobody is on the whitelist yet.</p>
+      </article>
+
+      <article class="plate card" data-tab-panel="ops" hidden>
+        <form class="inline-form" id="op-form">
+          <input name="name" placeholder="Player name" maxlength="16" required autocomplete="off" spellcheck="false" aria-label="Player name">
+          <button type="submit"><svg><use href="#i-plus-sign"/></svg>Make operator</button>
+        </form>
+        <ul class="rows" id="ops"></ul>
+        <p class="empty" id="ops-none">No operators. Operators can run every command in the game.</p>
+      </article>
+
+      <article class="plate card" data-tab-panel="bans" hidden>
         <form class="inline-form" id="ban-form">
-          <input name="target" placeholder="Player name" maxlength="16" required autocomplete="off" spellcheck="false" aria-label="Player name">
+          <input name="target" placeholder="Player name or IP address" maxlength="45" required autocomplete="off" spellcheck="false" aria-label="Player name or IP address">
           <input name="reason" placeholder="Reason (optional)" maxlength="200" autocomplete="off" aria-label="Reason">
           <button type="submit" class="destructive">Ban</button>
         </form>
