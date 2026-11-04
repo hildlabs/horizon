@@ -61,6 +61,7 @@
       <a href="#overview" data-page="overview"><svg><use href="#i-dashboard-square-01"/></svg>Overview</a>
       <a href="#players" data-page="players"><svg><use href="#i-user-multiple-02"/></svg>Players<span class="count" id="nav-players"></span></a>
       <a href="#console" data-page="console"><svg><use href="#i-computer-terminal-01"/></svg>Console</a>
+      <a href="#options" data-page="options"><svg><use href="#i-sliders-horizontal"/></svg>Settings<span class="count dot" id="nav-settings" hidden></span></a>
       <a href="#backups" data-page="backups"><svg><use href="#i-folder-01"/></svg>Backups</a>
       <a href="#reports" data-page="reports"><svg><use href="#i-information-circle"/></svg>Crash reports<span class="count warn" id="nav-reports"></span></a>
     </nav>
@@ -106,7 +107,7 @@
           <p class="empty" id="overview-no-players">Nobody is online.</p>
         </article>
         <article class="plate card">
-          <header class="card-head"><h2>This server</h2></header>
+          <header class="card-head"><h2>This server</h2><a href="#options" class="link">Settings</a></header>
           <dl class="facts" id="facts"></dl>
         </article>
       </div>
@@ -173,6 +174,16 @@
           <button type="submit" class="primary">Run</button>
         </form>
       </article>
+    </section>
+
+    <!-- Settings -->
+    <section class="page" data-page="options" hidden>
+      <form id="settings-form" class="settings"></form>
+      <div class="savebar plate" id="savebar" hidden>
+        <span id="savebar-text"></span>
+        <button type="button" class="ghost" id="settings-reset">Discard</button>
+        <button type="button" class="primary" id="settings-save">Save</button>
+      </div>
     </section>
 
     <!-- Backups -->

@@ -169,6 +169,7 @@ const PAGES = {
   overview: ["Overview", "How the server is doing right now."],
   players: ["Players", "Who is online, who may join and who is banned."],
   console: ["Console", "The server's log as it happens. Commands run as if typed in the server's console."],
+  options: ["Settings", "Saved to server.toml. Some take effect at once, the rest at the next start."],
   backups: ["Backups", "Zips of the world and the settings in backups/. Restoring keeps the current world as a backup."],
   reports: ["Crash reports", "The game writes one each time it stops unexpectedly."],
 };
@@ -187,6 +188,7 @@ function route() {
   document.title = `${PAGES[page][0]} · ${state.config ? state.config.server.motd : "Horizon server"}`;
   if (page === "console") scrollLog(true);
   if (state.status) renderUpdate(state.status.update);
+  if (page === "options" && !dirty()) renderSettings();
   renderCharts();
 }
 
@@ -208,6 +210,7 @@ const state = {
   backups: [],
   crashes: [],
   config: null,
+  restartNeeded: new Set(),
 };
 
 // --- Status, power and update ---------------------------------------------------------------------------
@@ -486,6 +489,153 @@ function renderLog() {
 const history = [];
 let historyAt = 0;
 
+// --- Settings -------------------------------------------------------------------------------------------
+
+// The settings the panel can change (settings::changeable_remotely), in the order of server.toml.
+const SETTINGS = [
+  ["Joining", [
+    ["server.motd", "Server name", "The line under the name in the server list.", "text"],
+    ["server.max_players", "Player slots", "How many players can be online at once.", "number", 1, 1000],
+    ["server.whitelist", "Whitelist", "Only whitelisted players and operators can join.", "switch"],
+    ["server.enforce_whitelist", "Enforce the whitelist", "Kick online players taken off the whitelist.", "switch"],
+    ["server.online_mode", "Check accounts", "Off lets anyone join under any name.", "switch"],
+    ["server.admin_feedback_to_ops", "Operators see each other's commands", "", "switch"],
+  ]],
+  ["Network and performance", [
+    ["server.port", "Port", "The port players connect to.", "number", 1, 65535],
+    ["server.bind", "Listen address", "Empty listens on every address.", "text"],
+    ["server.view_distance", "View distance", "Chunks sent around each player.", "number", 2, 32],
+    ["server.simulation_distance", "Simulation distance", "Chunks where mobs, crops and redstone tick.", "number", 2, 32],
+    ["server.max_view_distance", "Extra view distance", "Saved chunks shown past the view distance (0: off).", "number", 0, 128],
+  ]],
+  ["World", [
+    ["world.game_mode", "Game mode", "For players who join for the first time.", ["survival", "creative", "adventure", "spectator"]],
+    ["world.difficulty", "Difficulty", "", ["peaceful", "easy", "normal", "hard"]],
+    ["world.hardcore", "Hardcore", "One life: a player who dies becomes a spectator.", "switch"],
+    ["world.name", "World folder", "", "text"],
+    ["world.seed", "Seed", "Used when the world is first made. Empty: random.", "text"],
+  ]],
+  ["Backups and updates", [
+    ["backups.every", "Back up every", "Like 30m, 6h or 1d; 0 turns automatic backups off.", "text"],
+    ["backups.keep", "Automatic backups kept", "Backups made by hand are never deleted.", "number", 1, 1000],
+    ["updates.keep", "Older releases kept", "Besides the one in use and the one a rollback goes to.", "number", 0, 20],
+  ]],
+];
+
+const edits = new Map(); // key → new value
+
+function valueOf(key) {
+  if (key.startsWith("properties.")) return state.config.properties[key.slice(11)];
+  const [section, field] = key.split(".");
+  return state.config[section][field];
+}
+
+function dirty() {
+  return edits.size > 0;
+}
+
+function renderSettings() {
+  const c = state.config;
+  if (!c) return;
+  const form = $("settings-form");
+  const groups = SETTINGS.map(([title, rows]) => h(
+    "fieldset", { class: "plate" }, h("legend", {}, title),
+    rows.map(([key, label, help, type, min, max]) => {
+      const id = `set-${key.replace(".", "-")}`;
+      const value = edits.has(key) ? edits.get(key) : valueOf(key);
+      let input;
+      if (type === "switch") input = h("input", { type: "checkbox", role: "switch", class: "switch", id, checked: Boolean(value) });
+      else if (Array.isArray(type)) input = h("select", { id }, type.map((o) => h("option", { value: o, selected: o === value }, cap(o))));
+      else input = h("input", { id, type: type === "number" ? "number" : "text", value: value ?? "", min, max, spellcheck: "false", autocomplete: "off" });
+      const onChange = () => {
+        let v = type === "switch" ? input.checked : input.value;
+        if (type === "number") v = input.value === "" ? "" : Number(input.value);
+        if (v === valueOf(key)) edits.delete(key);
+        else edits.set(key, v);
+        row.classList.toggle("changed", edits.has(key));
+        renderSavebar();
+      };
+      input.addEventListener(type === "switch" || Array.isArray(type) ? "change" : "input", onChange);
+      const row = h(
+        "div", { class: `setting${edits.has(key) ? " changed" : ""}` },
+        h("label", { for: id }, h("b", {}, label), help && h("small", {}, help), h("span", { class: "key" }, key),
+          state.restartNeeded.has(key) && h("span", { class: "badge" }, "Takes effect at the next start")),
+        h("div", { class: "control" }, input),
+      );
+      return row;
+    }),
+  ));
+  // Any other server.properties key, as vanilla spells it.
+  const props = Object.entries(c.properties || {});
+  const extra = h(
+    "fieldset", { class: "plate" }, h("legend", {}, "Other server.properties"),
+    h("p", { class: "locked" }, "Any other vanilla key, like spawn-protection or pvp. They take effect at the next start."),
+    props.map(([k, v]) => {
+      const key = `properties.${k}`;
+      const input = h("input", { value: edits.has(key) ? edits.get(key) : String(v), "aria-label": k, spellcheck: "false" });
+      input.addEventListener("input", () => {
+        if (input.value === String(v)) edits.delete(key);
+        else edits.set(key, input.value);
+        renderSavebar();
+      });
+      return h("div", { class: "property-row" }, h("input", { value: k, disabled: true, "aria-label": "Key" }), input, h("span"));
+    }),
+    (() => {
+      const k = h("input", { placeholder: "key, like pvp", "aria-label": "New key", spellcheck: "false" });
+      const v = h("input", { placeholder: "value", "aria-label": "New value", spellcheck: "false" });
+      const add = button("", () => {
+        const name = k.value.trim();
+        if (!/^[a-z0-9.-]+$/.test(name)) return toast("A key is lower-case letters, digits, dots and dashes, as vanilla spells it.", true);
+        edits.set(`properties.${name}`, v.value);
+        k.value = v.value = "";
+        renderSavebar();
+        toast(`${name} is added when you save.`);
+      }, { kind: "icon", iconName: "plus-sign", title: "Add", small: false });
+      return h("div", { class: "property-row" }, k, v, add);
+    })(),
+  );
+  const locked = h(
+    "fieldset", { class: "plate" }, h("legend", {}, "Only in server.toml"),
+    h("p", { class: "locked" }, "The game program, the panel, the control API and Discord can only be changed in server.toml on the server, so a stolen panel session can't open them up."),
+    h("dl", { class: "facts" }, [
+      ["engine.path", c.engine.path || "the one installed beside horizon-server"],
+      ["engine.restart_on_crash", String(c.engine.restart_on_crash)],
+      ["panel.bind", c.panel.bind || "off"],
+      ["api.bind", c.api.bind || "a free port on 127.0.0.1"],
+      ["discord.webhook", c.discord.webhook ? "set" : "not set"],
+    ].flatMap(([k, v]) => [h("dt", { class: "mono" }, k), h("dd", { class: "mono" }, v)])),
+  );
+  form.replaceChildren(...groups, extra, locked);
+  renderSavebar();
+}
+
+function renderSavebar() {
+  $("savebar").hidden = !dirty();
+  $("nav-settings").hidden = !dirty();
+  $("savebar-text").textContent = `${edits.size} unsaved change${edits.size === 1 ? "" : "s"}`;
+}
+
+async function saveSettings() {
+  const changes = Object.fromEntries([...edits].map(([k, v]) => [k, typeof v === "number" && Number.isNaN(v) ? "" : v]));
+  $("settings-save").disabled = true;
+  try {
+    const outcome = await api("PATCH", "/api/v1/config", { changes });
+    edits.clear();
+    for (const key of outcome.restart || []) state.restartNeeded.add(key);
+    state.config = (await api("GET", "/api/v1/config")).config;
+    renderSettings();
+    renderFacts();
+    const later = (outcome.restart || []).length;
+    if (!outcome.running) toast("Saved. The server uses them from its next start.");
+    else if (later) toast(`Saved. ${(outcome.applied || []).length ? "Some apply now; " : ""}${later} take${later === 1 ? "s" : ""} effect when the server restarts.`);
+    else toast("Saved and applied.");
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    $("settings-save").disabled = false;
+  }
+}
+
 // --- Backups --------------------------------------------------------------------------------------------
 
 function renderBackups() {
@@ -580,6 +730,7 @@ async function refreshLists() {
 async function loadConfig() {
   try {
     state.config = (await api("GET", "/api/v1/config")).config;
+    if (!dirty()) renderSettings();
     renderFacts();
     renderBackups();
     route();
@@ -612,7 +763,7 @@ async function poll() {
     state.logNext = logs.next;
     appendLog(logs.lines);
     if (ticks++ % 5 === 0) await refreshLists();
-    if (ticks % 30 === 0) loadConfig();
+    if (ticks % 30 === 0 && !dirty()) loadConfig();
   } catch (e) {
     if (e instanceof SignedOut) show("signed-out");
     else {
@@ -636,6 +787,7 @@ function setUp() {
   $("restart").addEventListener("click", async () => {
     if (await ask({ title: "Restart the game?", text: "Players are disconnected for a moment and can join again once it's up.", ok: "Restart" })) {
       await act("POST", "/api/v1/restart", undefined, "Restarting…");
+      state.restartNeeded.clear();
     }
   });
   $("stop").addEventListener("click", async () => {
@@ -711,6 +863,17 @@ function setUp() {
     event.preventDefault();
     historyAt = Math.max(0, Math.min(history.length, historyAt + (event.key === "ArrowUp" ? -1 : 1)));
     $("command").value = history[historyAt] || "";
+  });
+
+  // Settings.
+  $("settings-form").addEventListener("submit", (event) => event.preventDefault());
+  $("settings-save").addEventListener("click", saveSettings);
+  $("settings-reset").addEventListener("click", () => {
+    edits.clear();
+    renderSettings();
+  });
+  window.addEventListener("beforeunload", (event) => {
+    if (dirty()) event.preventDefault();
   });
 
   // Backups.
