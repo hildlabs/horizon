@@ -171,6 +171,7 @@ const PAGES = {
   console: ["Console", "The server's log as it happens. Commands run as if typed in the server's console."],
   options: ["Settings", "Saved to server.toml. Some take effect at once, the rest at the next start."],
   backups: ["Backups", "Zips of the world and the settings in backups/. Restoring keeps the current world as a backup."],
+  mods: ["Mods", "What is built into this server's game."],
   reports: ["Crash reports", "The game writes one each time it stops unexpectedly."],
 };
 let page = "overview";
@@ -187,6 +188,7 @@ function route() {
   $("page-lead").textContent = PAGES[page][1];
   document.title = `${PAGES[page][0]} · ${state.config ? state.config.server.motd : "Horizon server"}`;
   if (page === "console") scrollLog(true);
+  if (page === "mods") loadMods();
   if (state.status) renderUpdate(state.status.update);
   if (page === "options" && !dirty()) renderSettings();
   renderCharts();
@@ -439,6 +441,7 @@ function selectTab(tab) {
 
 // --- Console --------------------------------------------------------------------------------------------
 
+let level = "all";
 const MAX_LINES = 2000;
 
 function kind(line) {
@@ -454,6 +457,15 @@ function lineElement(line) {
   const k = kind(line);
   const m = /^(\[\d\d:\d\d:\d\d\])(.*)$/.exec(line);
   return h("span", { class: `line ${k}` }, m ? [h("span", { class: "t" }, m[1]), m[2]] : line);
+}
+
+function shown(line) {
+  const filter = $("log-filter").value.trim().toLowerCase();
+  if (filter && !line.toLowerCase().includes(filter)) return false;
+  const k = kind(line);
+  if (level === "warn") return k === "warn" || k === "error";
+  if (level === "chat") return k === "chat" || k === "you";
+  return true;
 }
 
 function atBottom(el) {
@@ -474,7 +486,7 @@ function appendLog(lines) {
   const log = $("log");
   const stick = atBottom(log);
   if (trimmed) renderLog();
-  else log.append(...lines.map(lineElement));
+  else log.append(...lines.filter(shown).map(lineElement));
   if (stick) log.scrollTop = log.scrollHeight;
   else $("jump").hidden = false;
   $("log-tail").replaceChildren(...state.lines.slice(-10).map(lineElement));
@@ -482,7 +494,7 @@ function appendLog(lines) {
 }
 
 function renderLog() {
-  $("log").replaceChildren(...state.lines.map(lineElement));
+  $("log").replaceChildren(...state.lines.filter(shown).map(lineElement));
   scrollLog(true);
 }
 
@@ -646,12 +658,15 @@ function renderBackups() {
     const { when, label } = backupParts(b.name);
     const title = label || (when ? dateFormat.format(when) : b.name);
     const detail = [when && label ? dateFormat.format(when) : null, when ? ago(when) : null].filter(Boolean).join(" · ");
+    const download = h("a", { class: "button-link", href: `/api/v1/backups/download?name=${encodeURIComponent(b.name)}`, download: b.name, title: "Download", "aria-label": `Download ${b.name}` }, icon("download-04"));
     return h(
       "li", {}, h("span", { class: "file-icon" }, icon("folder-01")),
       h("span", { class: "row-main" }, h("b", {}, title), h("small", {}, detail || b.name)),
       h("span", { class: "row-side" }, bytes(b.bytes)),
       h("span", { class: "row-actions" },
-        button("Restore", () => restore(b.name), { kind: "ghost" })),
+        download,
+        button("Restore", () => restore(b.name), { kind: "ghost" }),
+        button("", () => removeBackup(b.name), { kind: "ghost icon", iconName: "delete-02", title: `Delete ${b.name}`, small: false })),
     );
   }));
 }
@@ -662,11 +677,36 @@ async function restore(name) {
     text: "The server restarts with it; players are disconnected for a moment. The current world is kept in backups/.",
     ok: "Restore",
     danger: true,
+    fields: [{ name: "dimension", label: "What to bring back", options: [["", "The whole world"], ["minecraft:overworld", "Only the Overworld"], ["minecraft:the_nether", "Only the Nether"], ["minecraft:the_end", "Only the End"]] }],
   });
-  if (answer) await act("POST", "/api/v1/restore", { name }, `Restoring ${name}: the server is restarting.`);
+  if (answer) await act("POST", "/api/v1/restore", { name, dimension: answer.dimension || undefined }, `Restoring ${name}: the server is restarting.`);
 }
 
-// --- Crash reports ------- -----------------------------------------------------------------------------
+async function removeBackup(name) {
+  if (!(await ask({ title: "Delete this backup?", text: `${name} is deleted from backups/. This can't be undone.`, ok: "Delete", danger: true }))) return;
+  if (await act("DELETE", `/api/v1/backups?name=${encodeURIComponent(name)}`, undefined, "Deleted.")) refreshLists();
+}
+
+// --- Mods and crash reports -----------------------------------------------------------------------------
+
+async function loadMods() {
+  try {
+    const mods = await api("GET", "/api/v1/mods");
+    const e = mods.engine;
+    $("engine-facts").replaceChildren(...[
+      ["Game build", e.found ? `${e.target || "server"} build of Horizon ${e.base || ""}`.trim() : "Horizon's own build, no mods"],
+      e.horizon && ["Horizon commit", e.horizon],
+      e.hooks != null && ["Mod hooks", String(e.hooks)],
+    ].filter(Boolean).flatMap(([k, v]) => [h("dt", {}, k), h("dd", { class: k === "Horizon commit" ? "mono" : "" }, v)]));
+    fill("mods", "no-mods", mods.native.map((m) => h(
+      "li", {}, h("span", { class: "file-icon" }, icon("puzzle")),
+      h("span", { class: "row-main" }, h("b", {}, m.id), h("small", { class: "mono" }, m.sha256 ? `sha256 ${m.sha256.slice(0, 16)}…` : "")),
+      h("span", { class: "tag accent" }, m.version || "?"),
+    )));
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
 
 let crashShown = null;
 
@@ -841,6 +881,14 @@ function setUp() {
   // Console.
   $("log").addEventListener("scroll", () => scrollLog(false));
   $("jump").addEventListener("click", () => scrollLog(true));
+  $("log-filter").addEventListener("input", renderLog);
+  for (const b of document.querySelectorAll(".segmented button")) {
+    b.addEventListener("click", () => {
+      level = b.dataset.level;
+      for (const other of document.querySelectorAll(".segmented button")) other.setAttribute("aria-pressed", String(other === b));
+      renderLog();
+    });
+  }
   $("command-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     const line = $("command").value.trim().replace(/^\//, "");

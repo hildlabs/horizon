@@ -303,6 +303,7 @@ select option { background: var(--base); color: #fff; }
 .ping.poor i:nth-child(1) { background: var(--danger); }
 .tag { font: 500 11px var(--font); padding: 2px 8px; border-radius: 999px; background: var(--fill-button); color: var(--ink-80); }
 .tag.danger { color: var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); }
+.tag.accent { color: var(--accent-soft); background: color-mix(in srgb, var(--accent) 18%, transparent); }
 
 .facts { display: grid; grid-template-columns: max-content 1fr; gap: 10px 20px; margin: 0; }
 .facts dt { color: var(--ink-60); }
@@ -329,11 +330,11 @@ select option { background: var(--base); color: #fff; }
 .stat canvas { width: 100%; height: 56px; display: block; }
 .stat footer { font-size: 11.5px; }
 
-/* Tabs. */
-.tabs { display: inline-flex; gap: 2px; padding: 3px; border-radius: 12px; background: var(--fill-field); align-self: flex-start; max-width: 100%; overflow-x: auto; }
-.tabs button { height: 32px; background: transparent; color: var(--ink-60); border-radius: 9px; }
-.tabs button:hover { color: var(--ink); background: transparent; }
-.tabs button[aria-selected="true"] { background: var(--fill-active); color: var(--ink); }
+/* Tabs and segmented controls. */
+.tabs, .segmented { display: inline-flex; gap: 2px; padding: 3px; border-radius: 12px; background: var(--fill-field); align-self: flex-start; max-width: 100%; overflow-x: auto; }
+.tabs button, .segmented button { height: 32px; background: transparent; color: var(--ink-60); border-radius: 9px; }
+.tabs button:hover, .segmented button:hover { color: var(--ink); background: transparent; }
+.tabs button[aria-selected="true"], .segmented button[aria-pressed="true"] { background: var(--fill-active); color: var(--ink); }
 .tabs span { font: 11px var(--mono); color: var(--ink-45); }
 
 .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; cursor: pointer; }
@@ -344,6 +345,10 @@ select option { background: var(--base); color: #fff; }
 /* The console. */
 .console-page { flex: 1; }
 .console { display: flex; flex-direction: column; min-height: calc(100vh - 180px); position: relative; overflow: hidden; }
+.console-bar { display: flex; gap: 12px; padding: 14px 16px; align-items: center; flex-wrap: wrap; }
+.search { flex: 1 1 220px; display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; border-radius: var(--r-button); background: var(--fill-field); color: var(--ink-45); }
+.search input { flex: 1; background: transparent; border: 0; height: 36px; padding: 0; color: var(--ink); }
+.search:focus-within { box-shadow: 0 0 0 1px var(--accent-soft); }
 .log {
   font: 12.5px/1.65 var(--mono);
   color: var(--ink-80);
@@ -465,6 +470,9 @@ dialog p { margin: 0 0 16px; color: var(--ink-80); }
   .console { min-height: calc(100vh - 230px); }
 }
 
+.button-link { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; border-radius: var(--r-button); color: var(--ink-60); transition: background var(--quick), color var(--quick); }
+.button-link:hover { background: var(--fill-hover); color: var(--ink); text-decoration: none; }
+.button-link svg { width: 16px; height: 16px; }
 button.destructive-fill { background: color-mix(in srgb, var(--danger) 80%, black); color: #fff; }
 button.destructive-fill:hover { background: color-mix(in srgb, var(--danger) 90%, black); }
 .mono { font-family: var(--mono); }

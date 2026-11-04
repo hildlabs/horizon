@@ -63,6 +63,7 @@
       <a href="#console" data-page="console"><svg><use href="#i-computer-terminal-01"/></svg>Console</a>
       <a href="#options" data-page="options"><svg><use href="#i-sliders-horizontal"/></svg>Settings<span class="count dot" id="nav-settings" hidden></span></a>
       <a href="#backups" data-page="backups"><svg><use href="#i-folder-01"/></svg>Backups</a>
+      <a href="#mods" data-page="mods"><svg><use href="#i-puzzle"/></svg>Mods</a>
       <a href="#reports" data-page="reports"><svg><use href="#i-information-circle"/></svg>Crash reports<span class="count warn" id="nav-reports"></span></a>
     </nav>
 
@@ -166,6 +167,14 @@
     <!-- Console -->
     <section class="page console-page" data-page="console" hidden>
       <article class="plate console">
+        <div class="console-bar">
+          <label class="search"><svg><use href="#i-search-01"/></svg><input id="log-filter" placeholder="Filter the log" autocomplete="off" spellcheck="false" aria-label="Filter the log"></label>
+          <div class="segmented" role="group" aria-label="Show">
+            <button type="button" data-level="all" aria-pressed="true">All</button>
+            <button type="button" data-level="warn" aria-pressed="false">Problems</button>
+            <button type="button" data-level="chat" aria-pressed="false">Chat</button>
+          </div>
+        </div>
         <pre class="log" id="log" tabindex="0" aria-live="off"></pre>
         <button type="button" class="jump small" id="jump" hidden><svg><use href="#i-arrow-down-01"/></svg>Latest</button>
         <form class="command" id="command-form">
@@ -196,6 +205,16 @@
         <p class="faint note" id="backup-schedule"></p>
         <ul class="rows" id="backups"></ul>
         <p class="empty" id="no-backups">No backups yet.</p>
+      </article>
+    </section>
+
+    <!-- Mods -->
+    <section class="page" data-page="mods" hidden>
+      <article class="plate card">
+        <dl class="facts" id="engine-facts"></dl>
+        <ul class="rows" id="mods"></ul>
+        <p class="empty" id="no-mods">No native mods are built into this server's game. Build one with mods in the launcher,
+          or with <code>horizon-launcher native-build --server-output</code>, and set <code>engine.path</code> to it.</p>
       </article>
     </section>
 
