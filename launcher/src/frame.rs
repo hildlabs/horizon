@@ -329,9 +329,9 @@ impl Launcher {
         }
         let mut server_rows = div().flex().flex_col().gap(px(4.));
         for e in &servers {
-            let up = self.servers.is_up(&e.dir);
-            let open = self.page == Page::Servers && self.servers.open.as_ref() == Some(&e.dir);
-            let dir = e.dir.clone();
+            let up = self.servers.is_up(&e.key());
+            let open = self.page == Page::Servers && self.servers.open.as_ref() == Some(&e.key());
+            let dir = e.key();
             server_rows = server_rows.child(
                 ui::row(format!("side-server-{}", e.dir.display()), open, 8., &t)
                     .child(

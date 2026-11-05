@@ -23,6 +23,7 @@ fn tone(status: &Status) -> Tone {
         "running" if status.crashes > 0 => Tone::Warn,
         "running" => Tone::Live,
         "stopped" => Tone::Off,
+        "unreachable" => Tone::Warn,
         _ => Tone::Busy,
     }
 }
@@ -36,7 +37,7 @@ impl Launcher {
         // The mockup always shows a server: the open one, else the first.
         if self.servers.open.is_none() {
             if let Some(first) = self.servers.list.first() {
-                let dir = first.dir.clone();
+                let dir = first.key();
                 self.open_server(dir);
             }
         }
@@ -44,7 +45,7 @@ impl Launcher {
             .servers
             .open
             .clone()
-            .filter(|d| self.servers.list.iter().any(|e| &e.dir == d));
+            .filter(|d| self.servers.list.iter().any(|e| &e.key() == d));
         let main = match &open {
             Some(dir) => self.glass_server(dir, cx),
             None => self.glass_no_server(cx),
@@ -85,7 +86,7 @@ impl Launcher {
             .servers
             .list
             .iter()
-            .find(|e| e.dir == dir)
+            .find(|e| e.key() == dir)
             .map(|e| e.name.clone())
             .unwrap_or_default();
         let mut state = phase_label(&status);
@@ -152,7 +153,13 @@ impl Launcher {
         corner = corner.child(if running {
             let d = dir.to_path_buf();
             panel.on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                match servers::Api::open(&d).map(|a| a.panel_link()) {
+                // On another computer, the panel's port comes here through a tunnel too.
+                let link = if servers::remote::find(&d).is_some() {
+                    Some(servers::remote::open_panel(&d))
+                } else {
+                    servers::Api::open(&d).map(|a| a.panel_link())
+                };
+                match link {
                     Some(Ok(url)) => cx.open_url(&url),
                     Some(Err(e)) => this.servers.problem = Some(Problem::plain(e)),
                     None => {}
@@ -162,11 +169,14 @@ impl Launcher {
         } else {
             panel.opacity(0.4).cursor_default()
         });
-        let folder = dir.to_path_buf();
-        corner = corner.child(
-            ui::icon_button("server-folder", "folder-01", 32., 17., 10., false, &t)
-                .on_click(move |_, _, cx| crate::glass_toast::open(cx, &folder)),
-        );
+        // A folder on another computer doesn't open here.
+        if servers::remote::find(dir).is_none() {
+            let folder = dir.to_path_buf();
+            corner = corner.child(
+                ui::icon_button("server-folder", "folder-01", 32., 17., 10., false, &t)
+                    .on_click(move |_, _, cx| crate::glass_toast::open(cx, &folder)),
+            );
+        }
         // Start, or Restart and Stop.
         let mut buttons = div().flex().flex_none().items_center().gap(px(8.));
         let wait = |b: Stateful<Div>| b.opacity(0.4).cursor_default();
@@ -342,6 +352,7 @@ impl Launcher {
                     Fix::Prepare => tr("Prepare the game files").into(),
                     Fix::AgreeEula => tr("I agree to the EULA").into(),
                     Fix::ShowLog => tr("Open the logs").into(),
+                    Fix::Retry => tr("Try again").into(),
                 };
                 d = d.child(
                     ui::quiet("problem-fix", label, 32., &t).on_click(cx.listener(
@@ -563,10 +574,10 @@ impl Launcher {
             let status = self
                 .servers
                 .statuses
-                .get(&e.dir)
+                .get(&e.key())
                 .cloned()
                 .unwrap_or_else(Status::stopped);
-            let current = self.servers.open.as_ref() == Some(&e.dir);
+            let current = self.servers.open.as_ref() == Some(&e.key());
             let line = match status.phase.as_str() {
                 "running" => trf(
                     "{online} of {max} online",
@@ -575,10 +586,15 @@ impl Launcher {
                         ("max", &status.max_players.unwrap_or(0).to_string()),
                     ],
                 ),
-                "stopped" => self.servers.stopped_line(&e.dir),
+                "stopped" => self.servers.stopped_line(&e.key()),
                 _ => phase_label(&status),
             };
-            let dir = e.dir.clone();
+            // A server on another computer says which one.
+            let line = match &e.host {
+                Some(host) => format!("{line} · {host}"),
+                None => line,
+            };
+            let dir = e.key();
             list = list.child(
                 keyboard(
                     row(SharedString::from(format!("server-row-{i}")), current),
@@ -609,14 +625,25 @@ impl Launcher {
             ),
         );
         let add = action("server-add", "folder-01", tr("Add a server folder…").into());
-        list.child(if self.servers.creating {
+        list = list.child(if self.servers.creating {
             add.opacity(0.4).cursor_default()
         } else {
             add.on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                 this.add_server_folder(cx);
                 cx.notify();
             }))
-        })
+        });
+        list.child(
+            action(
+                "server-add-remote",
+                "computer",
+                tr("Add a server on another computer…").into(),
+            )
+            .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
+                this.open_remote_add(cx);
+                cx.notify();
+            })),
+        )
     }
 
     /// How friends reach the open server: on this network, over the internet (Tailscale), and who
@@ -627,10 +654,19 @@ impl Launcher {
             .setting("server", "port")
             .and_then(Value::as_u64)
             .unwrap_or(25565) as u16;
-        let lan = match servers::lan_address() {
-            Some(ip) if port == 25565 => ip.to_string(),
-            Some(ip) => format!("{ip}:{port}"),
-            None => format!("localhost:{port}"),
+        // On another computer, friends use that computer's address (the host ssh connects to).
+        let remote = self
+            .servers
+            .open
+            .as_deref()
+            .and_then(servers::remote::find)
+            .map(|(host, _)| host.rsplit('@').next().unwrap_or(&host).to_string());
+        let lan = match (&remote, servers::lan_address()) {
+            (Some(host), _) if port == 25565 => host.clone(),
+            (Some(host), _) => format!("{host}:{port}"),
+            (None, Some(ip)) if port == 25565 => ip.to_string(),
+            (None, Some(ip)) => format!("{ip}:{port}"),
+            (None, None) => format!("localhost:{port}"),
         };
         let copied = self
             .servers
@@ -670,19 +706,30 @@ impl Launcher {
         let here = div()
             .flex()
             .flex_col()
-            .child(ui::card_heading(tr("On this network")))
+            .child(ui::card_heading(if remote.is_some() {
+                tr("Friends join with")
+            } else {
+                tr("On this network")
+            }))
             .child(address(
                 lan.clone(),
                 22.,
                 copy(self, "address-copy", lan, cx),
             ))
             .child(
-                ui::card_note(tr(
-                    "Friends on the same Wi-Fi: Multiplayer, Add server, paste.",
-                ))
+                ui::card_note(if remote.is_some() {
+                    tr("That computer's address: Multiplayer, Add server, paste. Its firewall lets the port through.")
+                } else {
+                    tr("Friends on the same Wi-Fi: Multiplayer, Add server, paste.")
+                })
                 .mt(px(4.)),
             );
-        let internet = self.glass_internet(port, cx);
+        // Tailscale and the friends link are this computer's: not for a server elsewhere.
+        let internet = if remote.is_some() {
+            div()
+        } else {
+            self.glass_internet(port, cx)
+        };
         let mut card = glass::plate(radius::PANEL)
             .flex()
             .flex_col()

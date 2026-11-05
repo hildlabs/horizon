@@ -1179,5 +1179,15 @@
   "Made for Horizon {pin}, but {mods} pin another commit: the build will ask you to Build anyway and may not compile": "Сделан для Horizon {pin}, но {mods} привязаны к другому коммиту: сборка попросит «Всё равно собрать» и может не скомпилироваться",
   "Made for Horizon {pin}, you play {yours}: the launcher builds your game on {pin}": "Сделан для Horizon {pin}, вы играете на {yours}: лаунчер соберёт игру на {pin}",
   "{title} {version} waits for you: it no longer has {ids}, which your worlds may use. Update it on the Mods page when you're ready.": "{title} {version} waits for you: it no longer has {ids}, which your worlds may use. Update it on the Mods page when you're ready.",
-  "Tags": "Теги"
+  "Tags": "Теги",
+  "Add a server on another computer…": "Добавить сервер на другом компьютере…",
+  "Add a server on another computer": "Добавить сервер на другом компьютере",
+  "A server set up with horizon-server on a VPS or a home server. The launcher signs in with your SSH key and never asks for or keeps a password.": "Сервер, настроенный через horizon-server на VPS или домашнем сервере. Лаунчер входит по твоему SSH-ключу и никогда не спрашивает и не хранит пароль.",
+  "Computer": "Компьютер",
+  "Server folder there": "Папка сервера там",
+  "user@address, or a Host name from your ~/.ssh/config": "user@адрес или имя Host из твоего ~/.ssh/config",
+  "Connecting…": "Подключение…",
+  "Can't reach its computer": "Его компьютер недоступен",
+  "Friends join with": "Друзья подключаются по",
+  "That computer's address: Multiplayer, Add server, paste. Its firewall lets the port through.": "Адрес этого компьютера: Сетевая игра, Добавить сервер, вставить. Его файрвол должен пропускать порт."
 }

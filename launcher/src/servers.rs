@@ -471,6 +471,8 @@ pub enum Fix {
     AgreeEula,
     /// The game's own log says more.
     ShowLog,
+    /// The other computer couldn't be reached: try again now.
+    Retry,
 }
 
 /// A problem, in plain words.

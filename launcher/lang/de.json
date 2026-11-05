@@ -1179,5 +1179,15 @@
   "Made for Horizon {pin}, but {mods} pin another commit: the build will ask you to Build anyway and may not compile": "Für Horizon {pin} gemacht, aber {mods} sind an einen anderen Commit gebunden: der Build fragt nach „Trotzdem bauen“ und kompiliert vielleicht nicht",
   "Made for Horizon {pin}, you play {yours}: the launcher builds your game on {pin}": "Für Horizon {pin} gemacht, du spielst {yours}: der Launcher baut dein Spiel auf {pin}",
   "{title} {version} waits for you: it no longer has {ids}, which your worlds may use. Update it on the Mods page when you're ready.": "{title} {version} waits for you: it no longer has {ids}, which your worlds may use. Update it on the Mods page when you're ready.",
-  "Tags": "Tags"
+  "Tags": "Tags",
+  "Add a server on another computer…": "Server auf einem anderen Computer hinzufügen…",
+  "Add a server on another computer": "Server auf einem anderen Computer hinzufügen",
+  "A server set up with horizon-server on a VPS or a home server. The launcher signs in with your SSH key and never asks for or keeps a password.": "Ein mit horizon-server eingerichteter Server auf einem VPS oder Heimserver. Der Launcher meldet sich mit deinem SSH-Schlüssel an und fragt nie nach einem Passwort oder speichert eins.",
+  "Computer": "Computer",
+  "Server folder there": "Serverordner dort",
+  "user@address, or a Host name from your ~/.ssh/config": "user@adresse oder ein Host-Name aus deiner ~/.ssh/config",
+  "Connecting…": "Verbinde…",
+  "Can't reach its computer": "Sein Computer ist nicht erreichbar",
+  "Friends join with": "Freunde treten bei mit",
+  "That computer's address: Multiplayer, Add server, paste. Its firewall lets the port through.": "Die Adresse dieses Computers: Mehrspieler, Server hinzufügen, einfügen. Seine Firewall muss den Port durchlassen."
 }

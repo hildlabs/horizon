@@ -12,10 +12,13 @@ use serde_json::Value;
 use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 
+#[path = "glass_remote_dialog.rs"]
+mod glass_remote_dialog;
 #[path = "glass_server_dialog.rs"]
 mod glass_server_dialog;
 #[path = "glass_servers.rs"]
 mod glass_servers;
+use glass_remote_dialog::RemoteAdd;
 use glass_servers::glass_setting_row;
 
 /// The servers this launcher started in this session, stopped when it closes unless they run as a
@@ -64,10 +67,13 @@ pub(super) enum Field {
     DeleteServer,
     /// Settings' accent as hex (`themes_page.rs`).
     AccentHex,
+    /// The Add a server on another computer dialog's (`glass_remote_dialog.rs`).
+    RemoteHost,
+    RemoteDir,
 }
 
 impl Field {
-    const ALL: [Field; 24] = [
+    const ALL: [Field; 26] = [
         Field::Name,
         Field::Seed,
         Field::Players,
@@ -92,6 +98,8 @@ impl Field {
         Field::OfflineName,
         Field::DeleteServer,
         Field::AccentHex,
+        Field::RemoteHost,
+        Field::RemoteDir,
     ];
 }
 
@@ -145,6 +153,8 @@ pub(super) enum Event {
         service: bool,
     },
     Applied(Result<Applied, Problem>),
+    /// The Add a server on another computer dialog's check, and the server it added.
+    RemoteChecked(Result<Entry, String>),
     Pvp(Option<bool>),
     UpdateCheck(Result<Value, Problem>),
     Failed(String),
@@ -264,6 +274,8 @@ pub(super) struct Servers {
     /// A field whose value was refused, and why: shown under it until it's edited.
     invalid: Option<(Field, &'static str)>,
     copied: Option<Instant>,
+    /// The Add a server on another computer dialog, while it is open.
+    remote_add: Option<RemoteAdd>,
     faces: HashMap<String, Option<Vec<[u8; 4]>>>,
     tx: Sender<Event>,
     rx: Receiver<Event>,
@@ -310,6 +322,7 @@ impl Servers {
             selected: None,
             invalid: None,
             copied: None,
+            remote_add: None,
             faces: HashMap::new(),
             tx,
             rx,
@@ -382,6 +395,8 @@ impl Servers {
 
 /// Stops the servers this launcher started, unless they run in the background as a service.
 pub(super) fn stop_on_quit() {
+    // The tunnels to other computers end with the launcher; the servers there keep running.
+    servers::remote::close_all();
     for dir in STARTED_HERE.lock().unwrap().drain(..) {
         if servers::service_installed(&dir) {
             continue;
@@ -570,7 +585,7 @@ impl Launcher {
                     let status = api
                         .as_ref()
                         .and_then(|a| a.status())
-                        .unwrap_or_else(Status::stopped);
+                        .unwrap_or_else(|| servers::not_answering(&dir));
                     let logs = api.and_then(|a| a.logs(since));
                     let _ = tx.send(Event::Polled {
                         dir,
@@ -580,7 +595,7 @@ impl Launcher {
                 });
             }
             None => {
-                let dirs: Vec<PathBuf> = self.servers.list.iter().map(|e| e.dir.clone()).collect();
+                let dirs: Vec<PathBuf> = self.servers.list.iter().map(|e| e.key()).collect();
                 std::thread::spawn(move || {
                     let all = dirs
                         .into_iter()
@@ -622,11 +637,45 @@ impl Launcher {
                     s.log_next = next;
                 }
                 let read_pvp = status.phase == "running" && s.pvp.is_none();
+                // Another computer that doesn't answer: why, with Try again, until it does.
+                if status.phase == "unreachable" && s.open.as_ref() == Some(&dir) {
+                    if let Some(why) = servers::remote::unreachable(&dir) {
+                        s.problem = Some(Problem {
+                            message: why,
+                            fix: Some(Fix::Retry),
+                        });
+                    }
+                } else if s
+                    .problem
+                    .as_ref()
+                    .is_some_and(|p| p.fix == Some(Fix::Retry))
+                {
+                    s.problem = None;
+                }
                 s.statuses.insert(dir, *status);
                 if read_pvp {
                     self.read_pvp();
                 }
             }
+            Event::RemoteChecked(result) => match result {
+                Ok(entry) => {
+                    s.remote_add = None;
+                    s.list = servers::list();
+                    s.modes.clear();
+                    self.side_servers = self.servers.list.clone();
+                    self.open_server(entry.key());
+                    self.servers.note = Some(format!(
+                        "{} is on the list. It runs on that computer, and keeps running when the launcher quits.",
+                        entry.name
+                    ));
+                }
+                Err(e) => {
+                    if let Some(add) = &mut s.remote_add {
+                        add.checking = false;
+                        add.error = Some(e);
+                    }
+                }
+            },
             Event::Statuses(all) => {
                 s.polling = false;
                 s.statuses.extend(all);
@@ -655,7 +704,7 @@ impl Launcher {
                         s.list = servers::list();
                         s.modes.clear();
                         s.modes.clear();
-                        self.open_server(entry.dir.clone());
+                        self.open_server(entry.key());
                         self.servers.note = Some(format!(
                             "{} is ready. Press Start, then give your friends the address below.",
                             entry.name
@@ -686,7 +735,7 @@ impl Launcher {
                     .lock()
                     .unwrap()
                     .retain(|started| started != &dir);
-                if !s.list.iter().any(|entry| entry.dir == dir) {
+                if !s.list.iter().any(|entry| entry.key() == dir) {
                     s.open = None;
                     self.side_servers = s.list.clone();
                 }
@@ -806,7 +855,10 @@ impl Launcher {
         let Some(dir) = self.servers.open.clone() else {
             return;
         };
-        STARTED_HERE.lock().unwrap().push(dir.clone());
+        // A server on another computer keeps running when the launcher quits.
+        if servers::remote::find(&dir).is_none() {
+            STARTED_HERE.lock().unwrap().push(dir.clone());
+        }
         self.servers.restart_needed.clear();
         self.server_job("Starting", move |log| {
             log("A new world takes a minute the first time".into());
@@ -856,6 +908,12 @@ impl Launcher {
                 if let Some(dir) = &self.servers.open {
                     crate::glass_toast::open(cx, &dir.join("logs"));
                 }
+            }
+            Fix::Retry => {
+                if let Some(dir) = &self.servers.open {
+                    servers::remote::retry(dir);
+                }
+                self.servers.polled = None;
             }
         }
     }
@@ -1211,6 +1269,7 @@ impl Launcher {
             Field::MemoryLimit => self.memory_enter(),
             Field::OfflineName => self.offline_name_enter(),
             Field::ServerName | Field::ServerAddress => self.add_server(),
+            Field::RemoteHost | Field::RemoteDir => self.add_remote(),
         }
     }
 
@@ -1309,7 +1368,7 @@ impl Launcher {
             self.servers.modes.clear();
             self.servers.loaded = true;
             if self.servers.open.is_none() && self.servers.list.len() == 1 {
-                let dir = self.servers.list[0].dir.clone();
+                let dir = self.servers.list[0].key();
                 self.open_server(dir);
             }
         }
@@ -1317,7 +1376,7 @@ impl Launcher {
             return self.glass_servers_page(cx);
         }
         if let Some(dir) = self.servers.open.clone() {
-            if self.servers.list.iter().any(|e| e.dir == dir) {
+            if self.servers.list.iter().any(|e| e.key() == dir) {
                 return self.server_dashboard(&dir, cx);
             }
             self.servers.open = None;
@@ -1399,7 +1458,7 @@ impl Launcher {
             let status = self
                 .servers
                 .statuses
-                .get(&e.dir)
+                .get(&e.key())
                 .cloned()
                 .unwrap_or_else(Status::stopped);
             let detail = if status.running() {
@@ -1417,7 +1476,7 @@ impl Launcher {
             } else {
                 format!("{} · {}", phase_label(&status), short(&e.dir))
             };
-            let dir = e.dir.clone();
+            let dir = e.key();
             list = list.child(index_row(
                 i + 1,
                 e.name.clone(),
@@ -1503,6 +1562,7 @@ impl Launcher {
                 Fix::Prepare => "Prepare the game files".into(),
                 Fix::AgreeEula => "I agree to the EULA".into(),
                 Fix::ShowLog => "Open the logs".into(),
+                Fix::Retry => "Try again".into(),
             };
             n = n.child(
                 button("problem-fix", label, Kind::Secondary, &t)
@@ -1530,7 +1590,7 @@ impl Launcher {
             .servers
             .list
             .iter()
-            .find(|e| e.dir == dir)
+            .find(|e| e.key() == dir)
             .map(|e| e.name.clone())
             .unwrap_or_default();
         let running = status.running();
@@ -2568,7 +2628,7 @@ impl Launcher {
             .servers
             .list
             .iter()
-            .find(|entry| Some(&entry.dir) == self.servers.open.as_ref())
+            .find(|entry| Some(&entry.key()) == self.servers.open.as_ref())
             .map(|entry| entry.name.clone())
             .unwrap_or_default();
         let ready = !status.running()
@@ -2983,6 +3043,9 @@ impl Launcher {
 
     pub(super) fn create_dialog(&mut self, cx: &mut Context<Self>) -> Option<Stateful<Div>> {
         let t = self.theme;
+        if self.servers.remote_add.is_some() {
+            return self.remote_add_dialog(cx);
+        }
         if t.glass {
             return self.glass_create_dialog(cx);
         }
@@ -3332,6 +3395,7 @@ fn phase_label(status: &Status) -> String {
         "starting" => tr("Starting").into(),
         "restarting" => tr("Restarting").into(),
         "stopping" => tr("Stopping").into(),
+        "unreachable" => tr("Can't reach its computer").into(),
         _ => tr("Stopped").into(),
     }
 }

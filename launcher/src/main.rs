@@ -2933,9 +2933,9 @@ impl Launcher {
         rows += servers.len();
         let headings = 1 + usize::from(!servers.is_empty());
         for e in servers {
-            let up = self.servers.is_up(&e.dir);
-            let open = self.page == Page::Servers && self.servers.open.as_ref() == Some(&e.dir);
-            let dir = e.dir.clone();
+            let up = self.servers.is_up(&e.key());
+            let open = self.page == Page::Servers && self.servers.open.as_ref() == Some(&e.key());
+            let dir = e.key();
             list = list.child(
                 shell::row(format!("side-server-{}", e.dir.display()), open, &t)
                     .child(

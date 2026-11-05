@@ -1179,5 +1179,15 @@
   "Made for Horizon {pin}, but {mods} pin another commit: the build will ask you to Build anyway and may not compile": "Made for Horizon {pin}, but {mods} pin another commit: the build will ask you to Build anyway and may not compile",
   "Made for Horizon {pin}, you play {yours}: the launcher builds your game on {pin}": "Made for Horizon {pin}, you play {yours}: the launcher builds your game on {pin}",
   "{title} {version} waits for you: it no longer has {ids}, which your worlds may use. Update it on the Mods page when you're ready.": "{title} {version} waits for you: it no longer has {ids}, which your worlds may use. Update it on the Mods page when you're ready.",
-  "Tags": "Tagi"
+  "Tags": "Tagi",
+  "Add a server on another computer…": "Add a server on another computer…",
+  "Add a server on another computer": "Add a server on another computer",
+  "A server set up with horizon-server on a VPS or a home server. The launcher signs in with your SSH key and never asks for or keeps a password.": "A server set up with horizon-server on a VPS or a home server. The launcher signs in with your SSH key and never asks for or keeps a password.",
+  "Computer": "Computer",
+  "Server folder there": "Server folder there",
+  "user@address, or a Host name from your ~/.ssh/config": "user@address, or a Host name from your ~/.ssh/config",
+  "Connecting…": "Connecting…",
+  "Can't reach its computer": "Can't reach its computer",
+  "Friends join with": "Friends join with",
+  "That computer's address: Multiplayer, Add server, paste. Its firewall lets the port through.": "That computer's address: Multiplayer, Add server, paste. Its firewall lets the port through."
 }

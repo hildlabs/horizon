@@ -1179,5 +1179,15 @@
   "Made for Horizon {pin}, but {mods} pin another commit: the build will ask you to Build anyway and may not compile": "为 Horizon {pin} 制作，但 {mods} 固定在另一个提交上：构建时会要求你选择“仍然构建”，并且可能无法编译",
   "Made for Horizon {pin}, you play {yours}: the launcher builds your game on {pin}": "为 Horizon {pin} 制作，你正在玩 {yours}：启动器会在 {pin} 上构建你的游戏",
   "{title} {version} waits for you: it no longer has {ids}, which your worlds may use. Update it on the Mods page when you're ready.": "{title} {version} waits for you: it no longer has {ids}, which your worlds may use. Update it on the Mods page when you're ready.",
-  "Tags": "标签"
+  "Tags": "标签",
+  "Add a server on another computer…": "添加另一台电脑上的服务器…",
+  "Add a server on another computer": "添加另一台电脑上的服务器",
+  "A server set up with horizon-server on a VPS or a home server. The launcher signs in with your SSH key and never asks for or keeps a password.": "在 VPS 或家用服务器上用 horizon-server 搭建的服务器。启动器使用你的 SSH 密钥登录，从不询问或保存密码。",
+  "Computer": "电脑",
+  "Server folder there": "那里的服务器文件夹",
+  "user@address, or a Host name from your ~/.ssh/config": "user@地址，或你 ~/.ssh/config 中的 Host 名称",
+  "Connecting…": "正在连接…",
+  "Can't reach its computer": "无法连接到它所在的电脑",
+  "Friends join with": "朋友通过此地址加入",
+  "That computer's address: Multiplayer, Add server, paste. Its firewall lets the port through.": "那台电脑的地址：多人游戏、添加服务器、粘贴。它的防火墙需要放行该端口。"
 }
