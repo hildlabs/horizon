@@ -94,6 +94,15 @@ The opening, then Play ([clip](docs/opening.webm)):
   `update` and `service` there, and talks to a running server through its control API. Problems
   are said in plain words, with a button when there's a fix (another port, the game files, the
   EULA).
+  **Add a server on another computer…** takes a server already set up with `horizon-server` on a
+  VPS or a home server (Linux or macOS): the computer (`user@host`, or a `Host` from
+  `~/.ssh/config`) and the server's folder there. The launcher reaches it with the system's `ssh`
+  and your own key (it never asks for or keeps a password): it runs the same `horizon-server`
+  commands there and talks to its control API, and to its web panel, through a port forward, so
+  neither has to listen on the internet. Its page is a local server's without the folder, the LAN
+  address and Tailscale; friends get that computer's address. A computer that doesn't answer
+  shows "Can't reach its computer" with **Try again**, and the server there keeps running when the
+  launcher quits.
   **Friends over the internet** (on Overview) uses Tailscale: it says whether Tailscale is
   installed and signed in (with Install, Sign in and Check again; signing in is always yours, in
   Tailscale's own app or page), shows this computer's Tailscale name and address with **Copy**,
