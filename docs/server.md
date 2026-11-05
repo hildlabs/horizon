@@ -752,6 +752,12 @@ runtime or new dependency. Server-sent events can replace the polling later if a
   - built (server-admin): `GET events` (server-sent events: log lines, the phase, and the engine's typed join,
     leave, kick, chat and death events, which the supervisor fetches with `server-events SINCE` on the
     engine's control endpoint every 250 ms; JSON when the client doesn't ask for a stream).
+  - built (plugins): `GET plugins`, `POST plugins/{on,off,remove,reload} {name}` for an engine that loads
+    native plugins from `plugins/` (a Paper-style engine on Horizon: `*.so`/`*.dll` with a `plugin.yml` built
+    in, loaded and reloaded while the game runs). The supervisor only manages the files (name and version
+    read from each library's `plugin.yml`, off = renamed `.disabled`); `reload` is the engine's
+    `hotswap NAME`. Adding a library runs new code, so only `horizon-server plugins add` (the server's own
+    user) does it, not the API or the panel.
 - **Auth.** Every call needs `Authorization: Bearer <token from .horizon/api.json>` (file mode 0600), and the
   `Host` header must name the address it listens on (as the panel's). `[api] bind` and `[api] token` fix the
   address and the token for a program that runs elsewhere (a moderation bot); `bind` takes loopback or a

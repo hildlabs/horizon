@@ -10,7 +10,7 @@ use crate::{
     config::Config,
     engine,
     http::{self, Request, Response},
-    panel, settings,
+    panel, plugins, settings,
     update::{self, Install},
 };
 use serde_json::{Value, json};
@@ -48,7 +48,7 @@ pub struct Route {
 }
 
 /// Every endpoint `start` and [`route`] answer; a test checks the two agree.
-pub const ROUTES: [Route; 32] = [
+pub const ROUTES: [Route; 37] = [
     Route {
         method: "GET",
         path: "/api/v1/status",
@@ -181,6 +181,41 @@ pub const ROUTES: [Route; 32] = [
         takes: "",
         answers: "`engine` (`found`, `target`, `base`, `horizon`, `hooks`) and `native` (id, version, sha256), from the `native-mods.json` the launcher wrote beside the game program",
         what: "The native mods the server's game program was built with",
+    },
+    Route {
+        method: "GET",
+        path: "/api/v1/plugins",
+        takes: "",
+        answers: "`folder` (whether `plugins/` exists), `library` (`so`, `dll` or `dylib`), `plugins` (file, name, version, enabled, bytes, data), the names and versions from each library's `plugin.yml`",
+        what: "The plugin libraries in `plugins/`, on and off (for an engine that loads plugins)",
+    },
+    Route {
+        method: "POST",
+        path: "/api/v1/plugins/on",
+        takes: "`{\"name\"}` (its name or file)",
+        answers: "`{\"plugin\": {...}}`",
+        what: "Turn a plugin on (its file loses `.disabled`; the engine loads it)",
+    },
+    Route {
+        method: "POST",
+        path: "/api/v1/plugins/off",
+        takes: "`{\"name\"}` (its name or file)",
+        answers: "`{\"plugin\": {...}}`",
+        what: "Turn a plugin off (its file is renamed `.disabled`; the engine unloads it)",
+    },
+    Route {
+        method: "POST",
+        path: "/api/v1/plugins/remove",
+        takes: "`{\"name\"}` (its name or file)",
+        answers: "`{\"plugin\": {...}}`",
+        what: "Delete a plugin's library (its data folder stays). Adding one is `horizon-server plugins add` only, as it runs new code",
+    },
+    Route {
+        method: "POST",
+        path: "/api/v1/plugins/reload",
+        takes: "`{\"name\"}` (its name or file)",
+        answers: "`{\"plugin\": {...}, \"output\": [...]}`: the console's lines",
+        what: "Reload a plugin now, changed or not (the engine's `hotswap NAME`)",
     },
     Route {
         method: "POST",
@@ -764,6 +799,24 @@ pub fn route(shared: &Arc<Shared>, request: &Request) -> Response {
         ("GET", "/api/v1/metrics/prometheus") => admin::prometheus(shared),
         ("GET", "/api/v1/players") => admin::players(shared),
         ("GET", "/api/v1/mods") => admin::mods(shared),
+        ("GET", "/api/v1/plugins") => {
+            let plugins: Vec<Value> = plugins::list(&shared.dir)
+                .iter()
+                .map(plugins::Plugin::to_json)
+                .collect();
+            Response::json(
+                200,
+                &json!({
+                    "folder": plugins::has_folder(&shared.dir),
+                    "library": plugins::LIBRARY,
+                    "plugins": plugins,
+                }),
+            )
+        }
+        ("POST", "/api/v1/plugins/on") => plugin_act(shared, &request.body, PluginAct::On),
+        ("POST", "/api/v1/plugins/off") => plugin_act(shared, &request.body, PluginAct::Off),
+        ("POST", "/api/v1/plugins/remove") => plugin_act(shared, &request.body, PluginAct::Remove),
+        ("POST", "/api/v1/plugins/reload") => plugin_act(shared, &request.body, PluginAct::Reload),
         ("POST", "/api/v1/players/kick") => admin::act(shared, Action::Kick, &request.body),
         ("POST", "/api/v1/players/ban") => admin::act(shared, Action::Ban, &request.body),
         ("POST", "/api/v1/players/pardon") => admin::act(shared, Action::Pardon, &request.body),
@@ -836,6 +889,65 @@ pub fn route(shared: &Arc<Shared>, request: &Request) -> Response {
         ("PATCH", "/api/v1/config") => patch_config(shared, &request.body),
         (_, path) if ROUTES.iter().any(|r| r.path == path) => Response::error(405, "wrong method"),
         _ => Response::error(404, "no such endpoint"),
+    }
+}
+
+#[derive(Clone, Copy)]
+enum PluginAct {
+    On,
+    Off,
+    Remove,
+    Reload,
+}
+
+/// `POST /api/v1/plugins/{on,off,remove,reload}` with `{"name"}`.
+fn plugin_act(shared: &Arc<Shared>, body: &[u8], act: PluginAct) -> Response {
+    let name = serde_json::from_slice::<Value>(body)
+        .ok()
+        .and_then(|v| v["name"].as_str().map(str::to_owned));
+    let Some(name) = name.filter(|n| !n.trim().is_empty()) else {
+        return Response::error(400, "the body must be {\"name\": \"<plugin>\"}");
+    };
+    let dir = &shared.dir;
+    let done = match act {
+        PluginAct::On => plugins::set_enabled(dir, &name, true).map(|p| (p, "turned on")),
+        PluginAct::Off => plugins::set_enabled(dir, &name, false).map(|p| (p, "turned off")),
+        PluginAct::Remove => plugins::remove(dir, &name).map(|p| (p, "deleted")),
+        PluginAct::Reload => {
+            let plugin = match plugins::find_plugin(dir, &name) {
+                Ok(p) => p,
+                Err(e) => return Response::error(404, &e),
+            };
+            if shared.phase() != Phase::Running {
+                return Response::error(409, "the game isn't running right now");
+            }
+            return match engine::Control::connect(dir)
+                .and_then(|mut c| c.ask(&format!("console {}", plugins::reload_command(&plugin))))
+            {
+                Ok(reply) => Response::json(
+                    200,
+                    &json!({ "plugin": plugin.to_json(), "output": reply["output"] }),
+                ),
+                Err(e) => Response::error(409, &format!("the game didn't answer: {e}")),
+            };
+        }
+    };
+    match done {
+        Ok((plugin, what)) => {
+            crate::supervisor::note(
+                shared,
+                "INFO",
+                &format!(
+                    "Control API: {what} the plugin {} ({})",
+                    plugin.name, plugin.file
+                ),
+            );
+            Response::json(200, &json!({ "plugin": plugin.to_json() }))
+        }
+        Err(e) if e.starts_with("no plugin") || e.starts_with("more than one") => {
+            Response::error(404, &e)
+        }
+        Err(e) => Response::error(409, &e),
     }
 }
 

@@ -20,6 +20,7 @@ mod management_schema;
 mod management_tls;
 mod mcp;
 mod panel;
+mod plugins;
 mod process;
 mod prune;
 mod query;
@@ -95,6 +96,15 @@ Usage: horizon-server [--dir DIR] <command>
   import-resources DIR
               Copy game files prepared elsewhere (by the launcher or horizon-prepare) into place, after
               checking they are complete and for this Minecraft version; the old copy stays on failure
+  plugins [--json]
+              The plugin libraries in plugins/ (for an engine that loads plugins), with the name and
+              version from their plugin.yml
+  plugins add FILE, plugins add - --name FILE
+              Put a plugin in plugins/ (from stdin with -), replacing an older copy; the engine
+              loads it while it runs
+  plugins on|off|remove|reload NAME
+              Turn a plugin on or off (renamed .disabled), delete it (its data stays), or reload it
+              now on the running server (the engine's hotswap)
   op NAME, deop NAME
   whitelist on|off|list, whitelist add|remove NAME
               Who may join (on the running server, or in the files when it is stopped)
@@ -166,6 +176,7 @@ fn main() -> ExitCode {
         Some("update") => update::command(&dir, &args[1..]),
         Some("rollback") => update::rollback(&dir, &args[1..]),
         Some(command @ ("op" | "deop" | "whitelist")) => lists::run(&dir, command, &args[1..]),
+        Some("plugins") => plugins::command(&dir, &args[1..]),
         Some("players") => cli::players(&dir, args[1..].iter().any(|a| a == "--json")),
         Some(command @ ("kick" | "ban" | "pardon" | "ban-ip" | "pardon-ip")) => {
             cli::moderate(&dir, command, &args[1..])

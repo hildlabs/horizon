@@ -60,6 +60,15 @@ Usage: horizon-server [--dir DIR] <command>
   import-resources DIR
               Copy game files prepared elsewhere (by the launcher or horizon-prepare) into place, after
               checking they are complete and for this Minecraft version; the old copy stays on failure
+  plugins [--json]
+              The plugin libraries in plugins/ (for an engine that loads plugins), with the name and
+              version from their plugin.yml
+  plugins add FILE, plugins add - --name FILE
+              Put a plugin in plugins/ (from stdin with -), replacing an older copy; the engine
+              loads it while it runs
+  plugins on|off|remove|reload NAME
+              Turn a plugin on or off (renamed .disabled), delete it (its data stays), or reload it
+              now on the running server (the engine's hotswap)
   op NAME, deop NAME
   whitelist on|off|list, whitelist add|remove NAME
               Who may join (on the running server, or in the files when it is stopped)
@@ -192,6 +201,11 @@ HTTP and JSON on 127.0.0.1. A running server writes its address and a random tok
 | `GET` | `/api/v1/metrics/prometheus` | nothing | the latest sample as Prometheus text: `horizon_up`, `horizon_tps`, `horizon_mspt{stat}`, `horizon_players_online`, `horizon_memory_rss_bytes`, `horizon_loaded_chunks{dimension}` and `horizon_entities{dimension}` (players and block entities apart)... | Metrics for a monitoring tool to scrape |
 | `GET` | `/api/v1/players` | nothing | `online` (name, uuid, address, ping_ms, dimension, position, op_level), `max_players`, `ops`, `whitelist` (`enabled`, `players`), `bans`, `ip_bans` (with reason, source, created, expires) | Who is online, and vanilla's lists |
 | `GET` | `/api/v1/mods` | nothing | `engine` (`found`, `target`, `base`, `horizon`, `hooks`) and `native` (id, version, sha256), from the `native-mods.json` the launcher wrote beside the game program | The native mods the server's game program was built with |
+| `GET` | `/api/v1/plugins` | nothing | `folder` (whether `plugins/` exists), `library` (`so`, `dll` or `dylib`), `plugins` (file, name, version, enabled, bytes, data), the names and versions from each library's `plugin.yml` | The plugin libraries in `plugins/`, on and off (for an engine that loads plugins) |
+| `POST` | `/api/v1/plugins/on` | `{"name"}` (its name or file) | `{"plugin": {...}}` | Turn a plugin on (its file loses `.disabled`; the engine loads it) |
+| `POST` | `/api/v1/plugins/off` | `{"name"}` (its name or file) | `{"plugin": {...}}` | Turn a plugin off (its file is renamed `.disabled`; the engine unloads it) |
+| `POST` | `/api/v1/plugins/remove` | `{"name"}` (its name or file) | `{"plugin": {...}}` | Delete a plugin's library (its data folder stays). Adding one is `horizon-server plugins add` only, as it runs new code |
+| `POST` | `/api/v1/plugins/reload` | `{"name"}` (its name or file) | `{"plugin": {...}, "output": [...]}`: the console's lines | Reload a plugin now, changed or not (the engine's `hotswap NAME`) |
 | `POST` | `/api/v1/players/kick` | `{"name", "reason"}` (reason optional) | `{"changed": bool, "output": [...]}`: whether the list (or who is online) changed, and the console's lines | Kick an online player |
 | `POST` | `/api/v1/players/ban` | `{"name", "reason"}` (reason optional) | `{"changed": bool, "output": [...]}`: whether the list (or who is online) changed, and the console's lines | Ban a player (kicked if online) |
 | `POST` | `/api/v1/players/pardon` | `{"name"}` | `{"changed": bool, "output": [...]}`: whether the list (or who is online) changed, and the console's lines | Lift a player's ban |
