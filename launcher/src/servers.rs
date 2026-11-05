@@ -898,6 +898,8 @@ fn service_suffix(dir: &Path) -> String {
 pub struct Api {
     address: String,
     token: String,
+    /// The `Host` the server checks, when `address` is a tunnel's end here (its own address there).
+    host: Option<String>,
 }
 
 impl Api {
@@ -908,6 +910,7 @@ impl Api {
         Some(Self {
             address: v["address"].as_str()?.to_string(),
             token: v["token"].as_str()?.to_string(),
+            host: None,
         })
     }
 
@@ -919,7 +922,8 @@ impl Api {
             .build();
         let request = agent
             .request(method, &format!("http://{}{path}", self.address))
-            .set("Authorization", &format!("Bearer {}", self.token));
+            .set("Authorization", &format!("Bearer {}", self.token))
+            .set("Host", self.host.as_deref().unwrap_or(&self.address));
         let response = match body {
             Some(b) => request.send_json(b),
             None => request.call(),

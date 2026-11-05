@@ -210,6 +210,17 @@ impl Tunnel {
             .and_then(|l| l.local_addr())
             .map_err(|e| e.to_string())?
             .port();
+        Self::open_at(ssh, host, port, target, wait)
+    }
+
+    /// [`Tunnel::open`] from a given port here.
+    fn open_at(
+        ssh: impl AsRef<OsStr>,
+        host: &str,
+        port: u16,
+        target: &str,
+        wait: std::time::Duration,
+    ) -> Result<Self, String> {
         let local = std::net::SocketAddr::from(([127, 0, 0, 1], port));
         let mut child = crate::process::command(ssh)
             .args(tunnel_args(host, port, target)?)
@@ -296,9 +307,11 @@ fn api_with(
         return Ok(None);
     };
     let tunnel = Tunnel::open_with(ssh, host, address, std::time::Duration::from_secs(15))?;
+    // The server answers only to its own address as the Host, which the tunnel's end here isn't.
     let api = Api {
         address: tunnel.local.to_string(),
         token: token.to_string(),
+        host: Some(address.to_string()),
     };
     Ok(Some((api, tunnel)))
 }
@@ -308,7 +321,25 @@ pub fn panel_link(host: &str, api: &Api) -> Result<(String, Tunnel), String> {
     let url = api.panel_link()?;
     let (target, rest) =
         split_url(&url).ok_or_else(|| format!("the panel gave a link I can't open: {url}"))?;
-    let tunnel = Tunnel::open(host, target)?;
+    // The browser sends the address it opens as the Host, and the panel takes only its own: the
+    // tunnel listens here on the panel's port there, so `127.0.0.1:<port>` is the same address.
+    let port = target
+        .rsplit_once(':')
+        .and_then(|(_, p)| p.parse::<u16>().ok())
+        .ok_or_else(|| format!("the panel gave a link I can't open: {url}"))?;
+    if std::net::TcpListener::bind(("127.0.0.1", port)).is_err() {
+        return Err(format!(
+            "Port {port} is in use on this computer (maybe by another server's panel), so the \
+             panel there can't open here. Stop what uses it and try again."
+        ));
+    }
+    let tunnel = Tunnel::open_at(
+        "ssh",
+        host,
+        port,
+        target,
+        std::time::Duration::from_secs(15),
+    )?;
     Ok((format!("http://{}{rest}", tunnel.local), tunnel))
 }
 
