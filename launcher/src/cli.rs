@@ -2217,8 +2217,8 @@ fn servers(action: ServersCmd, as_json: bool) -> Result<(), String> {
                     list.iter()
                         .map(|e| {
                             serde_json::json!({
-                                "name": e.name, "dir": e.dir,
-                                "phase": servers::status(&e.dir).phase,
+                                "name": e.name, "dir": e.dir, "host": e.host,
+                                "phase": servers::status(&e.key()).phase,
                             })
                         })
                         .collect(),
@@ -2230,8 +2230,11 @@ fn servers(action: ServersCmd, as_json: bool) -> Result<(), String> {
                 println!(
                     "{}  ({}): {}",
                     e.name,
-                    e.dir.display(),
-                    servers::status(&e.dir).phase
+                    match &e.host {
+                        Some(host) => format!("{host}:{}", e.dir.display()),
+                        None => e.dir.display().to_string(),
+                    },
+                    servers::status(&e.key()).phase
                 );
             }
         }
@@ -2285,16 +2288,17 @@ fn servers(action: ServersCmd, as_json: bool) -> Result<(), String> {
         ServersCmd::Run { server, args } => {
             let entry = find(&server)?;
             let args: Vec<&str> = args.iter().map(String::as_str).collect();
-            let status = servers::command(&entry.dir, &args)?
-                .status()
-                .map_err(|e| e.to_string())?;
+            let status = entry.command(&args)?.status().map_err(|e| e.to_string())?;
             if !status.success() {
                 return Err(format!("horizon-server exited with {status}"));
             }
         }
         ServersCmd::Forget { server } => {
             let entry = find(&server)?;
-            servers::forget(&entry.dir)?;
+            match &entry.host {
+                Some(host) => servers::forget_remote(host, &entry.dir)?,
+                None => servers::forget(&entry.dir)?,
+            }
             println!(
                 "{} is off the list; its folder stays in {}",
                 entry.name,

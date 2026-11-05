@@ -350,6 +350,179 @@ fn split_url(url: &str) -> Option<(&str, &str)> {
     Some((&after[..at], &after[at..]))
 }
 
+// ----- Remote servers on the Servers page -----------------------------------------------------------
+
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+/// The remote servers the page has listed, by the path it keys them with ([`key`]).
+static KEYS: Mutex<Vec<(PathBuf, String, String)>> = Mutex::new(Vec::new());
+
+/// What the page keys a remote server with, where it keys a local one with its folder: `ssh://HOST:DIR`.
+/// Every function of `servers` that takes a folder takes this too, and reaches the server over SSH.
+pub fn key(host: &str, dir: &str) -> PathBuf {
+    let key = PathBuf::from(format!("ssh://{host}:{dir}"));
+    let mut keys = KEYS.lock().unwrap();
+    if !keys.iter().any(|(k, _, _)| *k == key) {
+        keys.push((key.clone(), host.to_string(), dir.to_string()));
+    }
+    key
+}
+
+/// The computer and folder behind a [`key`]; `None` for a folder on this computer.
+pub fn find(key: &Path) -> Option<(String, String)> {
+    KEYS.lock()
+        .unwrap()
+        .iter()
+        .find(|(k, _, _)| k == key)
+        .map(|(_, h, d)| (h.clone(), d.clone()))
+}
+
+/// A remote server's API tunnel, kept while the launcher runs, and the last time it couldn't connect.
+struct Connection {
+    open: Option<(Api, Tunnel)>,
+    failed: Option<(Instant, String)>,
+}
+
+static CONNECTIONS: Mutex<Option<HashMap<PathBuf, Connection>>> = Mutex::new(None);
+static PANELS: Mutex<Option<HashMap<PathBuf, Tunnel>>> = Mutex::new(None);
+
+/// After a failed connection, the next try waits this long (the page asks every few seconds).
+const RETRY_AFTER: Duration = Duration::from_secs(20);
+
+/// The API of the server behind `key`, through its tunnel (opened on the first call and kept):
+/// `None` when it isn't running, or when its computer can't be reached ([`unreachable`] says why).
+pub fn open_api(key: &Path) -> Option<Api> {
+    let (host, dir) = find(key)?;
+    let mut all = CONNECTIONS.lock().unwrap();
+    let all = all.get_or_insert_with(HashMap::new);
+    let conn = all.entry(key.to_path_buf()).or_insert(Connection {
+        open: None,
+        failed: None,
+    });
+    if let Some((api, tunnel)) = &mut conn.open {
+        if tunnel.child.try_wait().ok().flatten().is_none() {
+            return Some(api.clone());
+        }
+        conn.open = None;
+    }
+    if conn
+        .failed
+        .as_ref()
+        .is_some_and(|(at, _)| at.elapsed() < RETRY_AFTER)
+    {
+        return None;
+    }
+    match api(&host, &dir) {
+        Ok(Some((api, tunnel))) => {
+            conn.failed = None;
+            conn.open = Some((api.clone(), tunnel));
+            Some(api)
+        }
+        Ok(None) => {
+            conn.failed = None;
+            None
+        }
+        Err(e) => {
+            conn.failed = Some((Instant::now(), e));
+            None
+        }
+    }
+}
+
+/// Why the computer behind `key` couldn't be reached last time, if it couldn't.
+pub fn unreachable(key: &Path) -> Option<String> {
+    CONNECTIONS
+        .lock()
+        .unwrap()
+        .as_ref()?
+        .get(key)?
+        .failed
+        .as_ref()
+        .map(|(_, e)| e.clone())
+}
+
+/// Tries the connection again at the next call, instead of waiting.
+pub fn retry(key: &Path) {
+    if let Some(all) = CONNECTIONS.lock().unwrap().as_mut() {
+        all.remove(key);
+    }
+}
+
+/// A one-time web panel link for the server behind `key`, through a panel tunnel kept while the
+/// launcher runs (the browser keeps using it).
+pub fn open_panel(key: &Path) -> Result<String, String> {
+    let (host, _) = find(key).ok_or("not a server on another computer")?;
+    let api = open_api(key)
+        .ok_or_else(|| unreachable(key).unwrap_or_else(|| "Start the server first.".to_string()))?;
+    let (url, tunnel) = panel_link(&host, &api)?;
+    PANELS
+        .lock()
+        .unwrap()
+        .get_or_insert_with(HashMap::new)
+        .insert(key.to_path_buf(), tunnel);
+    Ok(url)
+}
+
+/// Files read from the servers' folders there, and when.
+/// A file there (its server's key and name), when it was read, and what it held.
+type Files = HashMap<(PathBuf, String), (Instant, Option<String>)>;
+
+static FILES: Mutex<Option<Files>> = Mutex::new(None);
+
+/// How long a file read there is shown before it is read again.
+const FILE_FRESH: Duration = Duration::from_secs(5);
+
+/// A file of the server's folder there (`ssh HOST cat DIR/FILE`), without waiting: what was read
+/// last, while a fresh copy is read in the background once it is older than a few seconds. The
+/// page asks for lists while it draws, and SSH takes too long for that.
+pub fn read(key: &Path, file: &str) -> Option<String> {
+    let id = (key.to_path_buf(), file.to_string());
+    let mut files = FILES.lock().unwrap();
+    let files = files.get_or_insert_with(HashMap::new);
+    let known = files.get(&id).cloned();
+    if known
+        .as_ref()
+        .is_none_or(|(at, _)| at.elapsed() > FILE_FRESH)
+    {
+        // Mark it as being read, so one draw after another doesn't start more reads.
+        let shown = known.as_ref().and_then(|(_, t)| t.clone());
+        files.insert(id.clone(), (Instant::now(), shown));
+        if let Some((host, dir)) = find(key) {
+            std::thread::spawn(move || {
+                let text = read_now(&host, &dir, &id.1);
+                if let Some(files) = FILES.lock().unwrap().as_mut() {
+                    files.insert(id, (Instant::now(), text));
+                }
+            });
+        }
+    }
+    known.and_then(|(_, text)| text)
+}
+
+fn read_now(host: &str, dir: &str, file: &str) -> Option<String> {
+    let folder = quote(remote_dir(dir).ok()?);
+    let mut args = ssh_args(host, dir, &[]).ok()?;
+    args.pop();
+    args.push(format!("cat {folder}/{}", quote(file)));
+    let out = crate::process::command("ssh")
+        .args(args)
+        .stdin(Stdio::null())
+        .output()
+        .ok()?;
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).into_owned())
+}
+
+/// Ends every tunnel, when the launcher quits (the servers there keep running).
+pub fn close_all() {
+    CONNECTIONS.lock().unwrap().take();
+    PANELS.lock().unwrap().take();
+}
+
 #[cfg(test)]
 #[path = "remote_tests.rs"]
 mod tests;

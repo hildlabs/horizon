@@ -206,3 +206,29 @@ fn the_api_there_is_found_through_its_api_json() {
     assert!(start.elapsed() < std::time::Duration::from_secs(5));
     std::fs::remove_dir_all(&root).unwrap();
 }
+
+#[test]
+fn the_page_keys_a_remote_server_apart_from_any_folder_here() {
+    let local = super::super::Entry {
+        name: "Here".into(),
+        dir: "/srv/minecraft".into(),
+        host: None,
+    };
+    let there = super::super::Entry {
+        host: Some("mc@vps-key-test".into()),
+        ..local.clone()
+    };
+    assert_eq!(local.key(), Path::new("/srv/minecraft"));
+    assert_ne!(there.key(), local.key());
+    assert_eq!(
+        find(&there.key()),
+        Some(("mc@vps-key-test".to_string(), "/srv/minecraft".to_string()))
+    );
+    assert_eq!(find(&local.key()), None);
+    // Nothing answers yet: neither running nor said to be unreachable before a try.
+    assert!(unreachable(&there.key()).is_none());
+    // A file there is read in the background: the first ask doesn't wait for SSH.
+    let start = std::time::Instant::now();
+    assert_eq!(read(&there.key(), "ops.json"), None);
+    assert!(start.elapsed() < std::time::Duration::from_millis(200));
+}

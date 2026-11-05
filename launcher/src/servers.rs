@@ -42,9 +42,15 @@ pub struct Entry {
 impl Entry {
     /// `horizon-server --dir <dir> <args>`, here or over SSH on the entry's computer.
     pub fn command(&self, args: &[&str]) -> Result<Command, String> {
+        command(&self.key(), args)
+    }
+
+    /// What the page keys it with, and passes as the folder to every function here: the folder
+    /// itself, or [`remote::key`] for a server on another computer.
+    pub fn key(&self) -> PathBuf {
         match &self.host {
-            Some(host) => remote::command(host, &self.dir.to_string_lossy(), args),
-            None => command(&self.dir, args),
+            Some(host) => remote::key(host, &self.dir.to_string_lossy()),
+            None => self.dir.clone(),
         }
     }
 }
@@ -55,13 +61,21 @@ pub mod remote;
 /// The game mode a server's `server.toml` sets (`[world] game_mode`), read from the file
 /// without asking `horizon-server`: the Servers page's list says it for each stopped server.
 pub fn game_mode(dir: &Path) -> Option<String> {
-    let text = fs::read_to_string(dir.join("server.toml")).ok()?;
+    let text = read_file(dir, "server.toml")?;
     let config: toml::Value = toml::from_str(&text).ok()?;
     config
         .get("world")?
         .get("game_mode")?
         .as_str()
         .map(str::to_string)
+}
+
+/// A file of a server's folder, here or on its computer.
+fn read_file(dir: &Path, file: &str) -> Option<String> {
+    if remote::find(dir).is_some() {
+        return remote::read(dir, file);
+    }
+    fs::read_to_string(dir.join(file)).ok()
 }
 
 fn list_file() -> PathBuf {
@@ -77,6 +91,9 @@ pub fn list() -> Vec<Entry> {
     entries
         .into_iter()
         .filter(|e| e.host.is_some() || e.dir.is_dir())
+        .inspect(|e| {
+            e.key();
+        })
         .collect()
 }
 
@@ -120,6 +137,10 @@ pub fn forget_remote(host: &str, dir: &Path) -> Result<(), String> {
 
 /// Removes a registered, stopped server, retaining its files in the system trash.
 pub fn delete(dir: &Path) -> Result<(), String> {
+    if let Some((host, folder)) = remote::find(dir) {
+        // Nothing on the other computer is touched: the server only leaves the list.
+        return forget_remote(&host, Path::new(&folder));
+    }
     if !list().iter().any(|entry| entry.dir == dir) {
         return Err("This server is no longer in the launcher’s list.".into());
     }
@@ -350,6 +371,9 @@ fn point(link: &Path, target: &Path) -> std::io::Result<()> {
 
 /// `horizon-server --dir <dir> <args>`.
 pub fn command(dir: &Path, args: &[&str]) -> Result<Command, String> {
+    if let Some((host, folder)) = remote::find(dir) {
+        return remote::command(&host, &folder, args);
+    }
     let program = program().ok_or(
         "The server programs aren't set up yet: create a server, or press Prepare on its page.",
     )?;
@@ -379,7 +403,17 @@ pub fn run(dir: &Path, args: &[&str]) -> Result<String, Problem> {
         Ok(out)
     } else {
         let err = String::from_utf8_lossy(&output.stderr);
-        Err(Problem::explain(&format!("{out}\n{err}"), dir, since))
+        Err(failed(dir, output.status.code(), &out, &err, since))
+    }
+}
+
+/// A command that failed, explained; over SSH, a failed connection is said as one.
+fn failed(dir: &Path, code: Option<i32>, out: &str, err: &str, since: u64) -> Problem {
+    match remote::find(dir) {
+        Some((host, folder)) if code == Some(255) || code == Some(127) => {
+            Problem::plain(remote::explain(&host, &folder, code, err))
+        }
+        _ => Problem::explain(&format!("{out}\n{err}"), dir, since),
     }
 }
 
@@ -422,7 +456,7 @@ pub fn run_streamed(dir: &Path, args: &[&str], line: &dyn Fn(String)) -> Result<
     if status.success() {
         Ok(())
     } else {
-        Err(Problem::explain(&format!("{out}\n{err}"), dir, since))
+        Err(failed(dir, status.code(), &out, &err, since))
     }
 }
 
@@ -768,7 +802,7 @@ fn copy_world(from: &Path, to: &Path) -> std::io::Result<()> {
 /// The settings, as `horizon-server config --json` prints them (`None` before `init`, or from a
 /// `horizon-server` older than the command).
 pub fn config(dir: &Path) -> Option<Value> {
-    if !dir.join("server.toml").is_file() {
+    if remote::find(dir).is_none() && !dir.join("server.toml").is_file() {
         return None;
     }
     let out = run(dir, &["config", "--json"]).ok()?;
@@ -799,8 +833,7 @@ pub fn set_config(dir: &Path, changes: &[(&str, String)]) -> Result<Applied, Pro
 
 /// A list file's names (`whitelist.json`, `ops.json`, `banned-players.json`), as vanilla writes them.
 pub fn names(dir: &Path, file: &str) -> Vec<String> {
-    fs::read_to_string(dir.join(file))
-        .ok()
+    read_file(dir, file)
         .and_then(|t| serde_json::from_str::<Vec<Value>>(&t).ok())
         .unwrap_or_default()
         .iter()
@@ -810,8 +843,7 @@ pub fn names(dir: &Path, file: &str) -> Vec<String> {
 
 /// A list file's names with their UUIDs (empty when the file has none).
 pub fn entries(dir: &Path, file: &str) -> Vec<(String, String)> {
-    fs::read_to_string(dir.join(file))
-        .ok()
+    read_file(dir, file)
         .and_then(|t| serde_json::from_str::<Vec<Value>>(&t).ok())
         .unwrap_or_default()
         .iter()
@@ -847,6 +879,10 @@ pub fn lan_address() -> Option<std::net::IpAddr> {
 
 /// Whether the server starts at login: the service definition `horizon-server service print` names exists.
 pub fn service_installed(dir: &Path) -> bool {
+    // A service there is that computer's business: the launcher neither shows nor stops it.
+    if remote::find(dir).is_some() {
+        return false;
+    }
     if cfg!(windows) {
         let name = format!("horizon-server-{}", service_suffix(dir));
         return crate::process::command("schtasks")
@@ -905,6 +941,9 @@ pub struct Api {
 impl Api {
     /// The API of the server running in `dir`, if one runs.
     pub fn open(dir: &Path) -> Option<Self> {
+        if remote::find(dir).is_some() {
+            return remote::open_api(dir);
+        }
         let text = fs::read_to_string(dir.join(".horizon/api.json")).ok()?;
         let v: Value = serde_json::from_str(&text).ok()?;
         Some(Self {
@@ -1056,7 +1095,7 @@ impl Status {
     }
 
     pub fn running(&self) -> bool {
-        self.phase != "stopped"
+        self.phase != "stopped" && self.phase != "unreachable"
     }
 }
 
@@ -1064,7 +1103,19 @@ impl Status {
 pub fn status(dir: &Path) -> Status {
     Api::open(dir)
         .and_then(|api| api.status())
-        .unwrap_or_else(Status::stopped)
+        .unwrap_or_else(|| not_answering(dir))
+}
+
+/// The status of a server whose API doesn't answer: stopped, or, on another computer that can't
+/// be reached, `unreachable`.
+pub fn not_answering(dir: &Path) -> Status {
+    match remote::unreachable(dir) {
+        Some(_) => Status {
+            phase: "unreachable".into(),
+            ..Status::default()
+        },
+        None => Status::stopped(),
+    }
 }
 
 #[cfg(test)]
