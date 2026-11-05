@@ -3,7 +3,7 @@
 //! player's own keys and `~/.ssh/config`. `BatchMode` keeps ssh from asking for a password, so the launcher
 //! never sees or stores one. The other computer runs Linux or macOS (a POSIX shell runs the command there).
 
-use super::Status;
+use super::{Api, Status};
 use std::ffi::OsStr;
 use std::process::{Command, Stdio};
 
@@ -149,6 +149,11 @@ pub fn explain(host: &str, dir: &str, code: Option<i32>, stderr: &str) -> String
     if has("Could not resolve hostname") {
         return format!("There's no computer called {host}. Check the address.");
     }
+    if has("forward failed") || has("open failed") {
+        return format!(
+            "The server on {host} isn't answering. It may have just stopped: try again in a moment."
+        );
+    }
     if has("timed out") || has("Connection refused") || has("No route to host") {
         return format!("Can't reach {host}. It may be off, or its SSH port closed.");
     }
@@ -171,6 +176,147 @@ pub fn explain(host: &str, dir: &str, code: Option<i32>, stderr: &str) -> String
         .map(str::to_string)
         .unwrap_or_else(|| format!("horizon-server on {host} failed in {dir}."));
     super::capitalised(&said)
+}
+
+// ----- The control API, through a port forward ----------------------------------------------------
+
+/// A port forward to the other computer, `ssh -N -L 127.0.0.1:<port>:<target>`, ended when dropped.
+pub struct Tunnel {
+    child: std::process::Child,
+    /// Where it listens here: `127.0.0.1:<port>`.
+    pub local: std::net::SocketAddr,
+}
+
+impl Drop for Tunnel {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+impl Tunnel {
+    /// Forwards a free port here to `target` (`address:port`, as seen from `host`).
+    pub fn open(host: &str, target: &str) -> Result<Self, String> {
+        Self::open_with("ssh", host, target, std::time::Duration::from_secs(15))
+    }
+
+    fn open_with(
+        ssh: impl AsRef<OsStr>,
+        host: &str,
+        target: &str,
+        wait: std::time::Duration,
+    ) -> Result<Self, String> {
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .and_then(|l| l.local_addr())
+            .map_err(|e| e.to_string())?
+            .port();
+        let local = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+        let mut child = crate::process::command(ssh)
+            .args(tunnel_args(host, port, target)?)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| format!("Couldn't run ssh: {e}"))?;
+        let start = std::time::Instant::now();
+        loop {
+            if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+                let mut err = String::new();
+                if let Some(mut e) = child.stderr.take() {
+                    let _ = std::io::Read::read_to_string(&mut e, &mut err);
+                }
+                return Err(explain(host, target, status.code(), &err));
+            }
+            let up =
+                std::net::TcpStream::connect_timeout(&local, std::time::Duration::from_millis(200));
+            if up.is_ok() {
+                return Ok(Self { child, local });
+            }
+            if start.elapsed() > wait {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!(
+                    "Can't reach {host}. It may be off, or its SSH port closed."
+                ));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+    }
+}
+
+/// ssh's arguments for a port forward from `127.0.0.1:<port>` here to `target` there.
+pub fn tunnel_args(host: &str, port: u16, target: &str) -> Result<Vec<String>, String> {
+    check_host(host)?;
+    if target.is_empty() || target.starts_with('-') || target.chars().any(char::is_whitespace) {
+        return Err(format!("{target:?} isn't an address to forward to."));
+    }
+    let mut out: Vec<String> = OPTIONS.iter().map(|s| s.to_string()).collect();
+    out.extend([
+        "-o".into(),
+        "ExitOnForwardFailure=yes".into(),
+        "-N".into(),
+        "-T".into(),
+        "-L".into(),
+        format!("127.0.0.1:{port}:{target}"),
+        "--".into(),
+        host.into(),
+    ]);
+    Ok(out)
+}
+
+/// The running server's control API on `host`, through a tunnel that lives as long as it is kept:
+/// `None` when the server there isn't running (no `.horizon/api.json`).
+pub fn api(host: &str, dir: &str) -> Result<Option<(Api, Tunnel)>, String> {
+    api_with("ssh", host, dir)
+}
+
+fn api_with(
+    ssh: impl AsRef<OsStr> + Copy,
+    host: &str,
+    dir: &str,
+) -> Result<Option<(Api, Tunnel)>, String> {
+    let folder = quote(remote_dir(dir)?);
+    let mut args = ssh_args(host, dir, &[])?;
+    args.pop();
+    args.push(format!(
+        "cat {folder}/.horizon/api.json 2>/dev/null || echo '{{}}'"
+    ));
+    let output = crate::process::command(ssh)
+        .args(args)
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|e| format!("Couldn't run ssh: {e}"))?;
+    if !output.status.success() {
+        let err = String::from_utf8_lossy(&output.stderr);
+        return Err(explain(host, dir, output.status.code(), &err));
+    }
+    let v: serde_json::Value =
+        serde_json::from_slice(&output.stdout).unwrap_or(serde_json::Value::Null);
+    let (Some(address), Some(token)) = (v["address"].as_str(), v["token"].as_str()) else {
+        return Ok(None);
+    };
+    let tunnel = Tunnel::open_with(ssh, host, address, std::time::Duration::from_secs(15))?;
+    let api = Api {
+        address: tunnel.local.to_string(),
+        token: token.to_string(),
+    };
+    Ok(Some((api, tunnel)))
+}
+
+/// A one-time web panel link that opens here: the panel's port forwarded too, and the link pointed at it.
+pub fn panel_link(host: &str, api: &Api) -> Result<(String, Tunnel), String> {
+    let url = api.panel_link()?;
+    let (target, rest) =
+        split_url(&url).ok_or_else(|| format!("the panel gave a link I can't open: {url}"))?;
+    let tunnel = Tunnel::open(host, target)?;
+    Ok((format!("http://{}{rest}", tunnel.local), tunnel))
+}
+
+/// `http://<address:port><rest>` → (`address:port`, `<rest>`).
+fn split_url(url: &str) -> Option<(&str, &str)> {
+    let after = url.strip_prefix("http://")?;
+    let at = after.find('/').unwrap_or(after.len());
+    Some((&after[..at], &after[at..]))
 }
 
 #[cfg(test)]

@@ -1,4 +1,5 @@
 use super::*;
+use std::path::{Path, PathBuf};
 
 #[test]
 fn the_command_runs_horizon_server_in_the_folder_there() {
@@ -128,4 +129,80 @@ fn lists_written_before_remote_servers_still_read() {
     let old: super::super::Entry = serde_json::from_str(r#"{"name":"A","dir":"/x"}"#).unwrap();
     assert_eq!(old.host, None);
     assert!(!serde_json::to_string(&old).unwrap().contains("host"));
+}
+
+#[test]
+fn the_tunnel_forwards_a_port_here_to_the_api_there() {
+    let args = tunnel_args("mc@vps", 50123, "127.0.0.1:8131").unwrap();
+    assert!(args
+        .windows(2)
+        .any(|w| w == ["-o", "ExitOnForwardFailure=yes"]));
+    assert!(args
+        .windows(2)
+        .any(|w| w == ["-L", "127.0.0.1:50123:127.0.0.1:8131"]));
+    assert_eq!(&args[args.len() - 2..], ["--", "mc@vps"]);
+    assert!(args.contains(&"-N".to_string()));
+    for target in ["", "-oProxyCommand=x", "a b:1"] {
+        assert!(tunnel_args("mc@vps", 1, target).is_err(), "{target:?}");
+    }
+    assert_eq!(
+        split_url("http://127.0.0.1:8130/login?code=abc"),
+        Some(("127.0.0.1:8130", "/login?code=abc"))
+    );
+    assert_eq!(split_url("ftp://x"), None);
+}
+
+/// A stand-in for ssh: `cat` lines run in a local shell, a port forward fails as `refused` says.
+#[cfg(unix)]
+fn fake_ssh(root: &Path, refused: bool) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let ssh = root.join("ssh");
+    let forward = if refused {
+        "echo 'channel 0: open failed: connect failed: Connection refused' >&2; echo 'Error: forward failed' >&2; exit 255"
+    } else {
+        "sleep 30"
+    };
+    std::fs::write(
+        &ssh,
+        format!(
+            "#!/bin/sh\nfor a; do [ \"$a\" = -N ] && {{ {forward}; }}; line=$a; done\nexec sh -c \"$line\"\n"
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&ssh, std::fs::Permissions::from_mode(0o755)).unwrap();
+    ssh
+}
+
+#[cfg(unix)]
+#[test]
+fn the_api_there_is_found_through_its_api_json() {
+    let root = std::env::temp_dir().join(format!("horizon-remote-api-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("srv/.horizon")).unwrap();
+    let dir = root.join("srv").to_string_lossy().into_owned();
+    // Not running: no api.json.
+    let ssh = fake_ssh(&root, true);
+    assert!(api_with(&ssh, "box", &dir).unwrap().is_none());
+    // Running, but the forward fails: said as a connection problem, not a crash.
+    std::fs::write(
+        root.join("srv/.horizon/api.json"),
+        r#"{"address":"127.0.0.1:8131","token":"t0k"}"#,
+    )
+    .unwrap();
+    let err = api_with(&ssh, "box", &dir).err().unwrap();
+    assert!(err.contains("The server on box isn't answering"), "{err}");
+    // A forward that never comes up gives up after the wait.
+    let ssh = fake_ssh(&root, false);
+    let start = std::time::Instant::now();
+    let err = Tunnel::open_with(
+        &ssh,
+        "box",
+        "127.0.0.1:8131",
+        std::time::Duration::from_millis(500),
+    )
+    .err()
+    .unwrap();
+    assert!(err.contains("Can't reach box"), "{err}");
+    assert!(start.elapsed() < std::time::Duration::from_secs(5));
+    std::fs::remove_dir_all(&root).unwrap();
 }
