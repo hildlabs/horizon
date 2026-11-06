@@ -163,7 +163,7 @@ pub fn manifest(bytes: &[u8]) -> (Option<String>, Option<String>) {
             .min(at + MANIFEST_MAX);
         let yml = String::from_utf8_lossy(&bytes[start..end]);
         // Other strings can sit right before it with nothing between: its first line starts at its key.
-        let first = |l: &str, key: &str| l.rfind(&format!("{key}:")).map_or(l.len(), |i| i);
+        let first = |l: &str, key: &str| l.rfind(&format!("{key}:")).unwrap_or(l.len());
         let key = |key: &str| {
             yml.lines()
                 .enumerate()
