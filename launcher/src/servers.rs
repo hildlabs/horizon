@@ -870,6 +870,60 @@ pub fn backups(dir: &Path) -> Result<Vec<Backup>, Problem> {
     serde_json::from_str(out.trim()).map_err(|e| Problem::plain(e.to_string()))
 }
 
+/// A plugin library in the server's `plugins/`, as `horizon-server plugins --json` lists it (for an engine
+/// that loads plugins, like a Paper-style one).
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct Plugin {
+    pub file: String,
+    pub name: String,
+    #[serde(default)]
+    pub version: Option<String>,
+    pub enabled: bool,
+    #[serde(default)]
+    pub bytes: u64,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+pub struct Plugins {
+    /// The server has a `plugins/` folder: its engine loads plugins.
+    pub folder: bool,
+    /// The library's extension there (`so`, `dll`, `dylib`).
+    pub library: String,
+    pub plugins: Vec<Plugin>,
+}
+
+/// The server's plugins; None when its `horizon-server` doesn't manage plugins yet, or didn't answer.
+pub fn plugins(dir: &Path) -> Option<Plugins> {
+    let out = run(dir, &["plugins", "--json"]).ok()?;
+    out.lines()
+        .rev()
+        .find_map(|l| serde_json::from_str(l.trim()).ok())
+}
+
+/// Puts the library at `path` into the server's `plugins/`, on this computer or over SSH (it goes through
+/// `horizon-server plugins add -` on stdin): the engine loads it while it runs. What it printed.
+pub fn add_plugin(dir: &Path, path: &Path) -> Result<String, Problem> {
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .ok_or_else(|| Problem::plain("That isn't a file."))?;
+    let file =
+        fs::File::open(path).map_err(|e| Problem::plain(format!("{}: {e}", path.display())))?;
+    let since = log_length(dir);
+    let output = command(dir, &["plugins", "add", "-", "--name", &name])
+        .map_err(Problem::plain)?
+        .stdin(file)
+        .output()
+        .map_err(|e| Problem::plain(format!("Couldn't run horizon-server: {e}")))?;
+    let out = String::from_utf8_lossy(&output.stdout).into_owned();
+    if output.status.success() {
+        Ok(out.trim().to_string())
+    } else {
+        let err = String::from_utf8_lossy(&output.stderr);
+        Err(failed(dir, output.status.code(), &out, &err, since))
+    }
+}
+
 /// The address friends on the same network type: this computer's LAN address. No packet is sent: the
 /// system only picks the interface it would use.
 pub fn lan_address() -> Option<std::net::IpAddr> {

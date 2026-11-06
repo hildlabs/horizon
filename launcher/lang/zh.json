@@ -1189,5 +1189,17 @@
   "Connecting…": "正在连接…",
   "Can't reach its computer": "无法连接到它所在的电脑",
   "Friends join with": "朋友通过此地址加入",
-  "That computer's address: Multiplayer, Add server, paste. Its firewall lets the port through.": "那台电脑的地址：多人游戏、添加服务器、粘贴。它的防火墙需要放行该端口。"
+  "That computer's address: Multiplayer, Add server, paste. Its firewall lets the port through.": "那台电脑的地址：多人游戏、添加服务器、粘贴。它的防火墙需要放行该端口。",
+  "Add plugin…": "添加插件…",
+  "A plugin is a .{library} file. The server loads a new or changed one while it runs.": "插件是一个 .{library} 文件。服务器运行时会加载新的或改动过的插件。",
+  "No plugins yet.": "还没有插件。",
+  "Reload now": "立即重新加载",
+  "Reloaded {name}.": "已重新加载 {name}。",
+  "Turn off": "关闭",
+  "Turn on": "开启",
+  "Plugins": "插件",
+  "{file} isn't a plugin for this server: it takes .{library} files.": "{file} 不是此服务器的插件：它使用 .{library} 文件。",
+  "Adding plugins": "正在添加插件",
+  "Added {files}. The server loads plugins while it runs.": "已添加 {files}。服务器运行时会加载插件。",
+  "Deleted {name}.": "已删除 {name}。"
 }

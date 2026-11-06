@@ -1189,5 +1189,17 @@
   "Connecting…": "Łączenie…",
   "Can't reach its computer": "Jego komputer jest nieosiągalny",
   "Friends join with": "Znajomi dołączają przez",
-  "That computer's address: Multiplayer, Add server, paste. Its firewall lets the port through.": "Adres tego komputera: Gra wieloosobowa, Dodaj serwer, wklej. Jego zapora musi przepuszczać port."
+  "That computer's address: Multiplayer, Add server, paste. Its firewall lets the port through.": "Adres tego komputera: Gra wieloosobowa, Dodaj serwer, wklej. Jego zapora musi przepuszczać port.",
+  "Add plugin…": "Dodaj wtyczkę…",
+  "A plugin is a .{library} file. The server loads a new or changed one while it runs.": "Wtyczka to plik .{library}. Serwer wczytuje nową lub zmienioną w trakcie działania.",
+  "No plugins yet.": "Nie ma jeszcze wtyczek.",
+  "Reload now": "Wczytaj ponownie",
+  "Reloaded {name}.": "Wczytano ponownie {name}.",
+  "Turn off": "Wyłącz",
+  "Turn on": "Włącz",
+  "Plugins": "Wtyczki",
+  "{file} isn't a plugin for this server: it takes .{library} files.": "{file} nie jest wtyczką dla tego serwera: przyjmuje pliki .{library}.",
+  "Adding plugins": "Dodawanie wtyczek",
+  "Added {files}. The server loads plugins while it runs.": "Dodano {files}. Serwer wczytuje wtyczki w trakcie działania.",
+  "Deleted {name}.": "Usunięto {name}."
 }

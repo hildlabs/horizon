@@ -1189,5 +1189,17 @@
   "Connecting…": "Verbinde…",
   "Can't reach its computer": "Sein Computer ist nicht erreichbar",
   "Friends join with": "Freunde treten bei mit",
-  "That computer's address: Multiplayer, Add server, paste. Its firewall lets the port through.": "Die Adresse dieses Computers: Mehrspieler, Server hinzufügen, einfügen. Seine Firewall muss den Port durchlassen."
+  "That computer's address: Multiplayer, Add server, paste. Its firewall lets the port through.": "Die Adresse dieses Computers: Mehrspieler, Server hinzufügen, einfügen. Seine Firewall muss den Port durchlassen.",
+  "Add plugin…": "Plugin hinzufügen…",
+  "A plugin is a .{library} file. The server loads a new or changed one while it runs.": "Ein Plugin ist eine .{library}-Datei. Der Server lädt neue oder geänderte im laufenden Betrieb.",
+  "No plugins yet.": "Noch keine Plugins.",
+  "Reload now": "Jetzt neu laden",
+  "Reloaded {name}.": "{name} neu geladen.",
+  "Turn off": "Ausschalten",
+  "Turn on": "Einschalten",
+  "Plugins": "Plugins",
+  "{file} isn't a plugin for this server: it takes .{library} files.": "{file} ist kein Plugin für diesen Server: Er nimmt .{library}-Dateien.",
+  "Adding plugins": "Plugins werden hinzugefügt",
+  "Added {files}. The server loads plugins while it runs.": "{files} hinzugefügt. Der Server lädt Plugins im laufenden Betrieb.",
+  "Deleted {name}.": "{name} gelöscht."
 }

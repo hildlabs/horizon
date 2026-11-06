@@ -1189,5 +1189,17 @@
   "Connecting…": "Підключення…",
   "Can't reach its computer": "Його комп’ютер недоступний",
   "Friends join with": "Друзі підключаються за",
-  "That computer's address: Multiplayer, Add server, paste. Its firewall lets the port through.": "Адреса цього комп’ютера: Мультиплеєр, Додати сервер, вставити. Його брандмауер має пропускати порт."
+  "That computer's address: Multiplayer, Add server, paste. Its firewall lets the port through.": "Адреса цього комп’ютера: Мультиплеєр, Додати сервер, вставити. Його брандмауер має пропускати порт.",
+  "Add plugin…": "Додати плагін…",
+  "A plugin is a .{library} file. The server loads a new or changed one while it runs.": "Плагін — це файл .{library}. Сервер завантажує новий або змінений плагін без зупинки.",
+  "No plugins yet.": "Плагінів поки немає.",
+  "Reload now": "Перезавантажити",
+  "Reloaded {name}.": "{name} перезавантажено.",
+  "Turn off": "Вимкнути",
+  "Turn on": "Увімкнути",
+  "Plugins": "Плагіни",
+  "{file} isn't a plugin for this server: it takes .{library} files.": "{file} не підходить цьому серверу: він приймає файли .{library}.",
+  "Adding plugins": "Додавання плагінів",
+  "Added {files}. The server loads plugins while it runs.": "{files} додано. Сервер завантажує плагіни без зупинки.",
+  "Deleted {name}.": "{name} видалено."
 }

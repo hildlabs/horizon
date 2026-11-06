@@ -5,7 +5,7 @@ use super::line_edit::{self, Key, LineEdit};
 use super::*;
 use horizon_launcher::heads;
 use horizon_launcher::servers::{
-    self, Applied, Backup, Entry, Fix, NewServer, Problem, Status, World,
+    self, Applied, Backup, Entry, Fix, NewServer, Plugins, Problem, Status, World,
 };
 use horizon_theme::glass::radius;
 use serde_json::Value;
@@ -18,6 +18,8 @@ mod glass_remote_dialog;
 mod glass_server_dialog;
 #[path = "glass_servers.rs"]
 mod glass_servers;
+#[path = "servers_plugins.rs"]
+mod servers_plugins;
 use glass_remote_dialog::RemoteAdd;
 use glass_servers::glass_setting_row;
 
@@ -109,13 +111,16 @@ pub(super) enum Tab {
     Players,
     Settings,
     Backups,
+    /// Only for a server whose engine loads plugins (its `plugins/` folder exists).
+    Plugins,
 }
 
-const TABS: [(Tab, &str); 4] = [
+const TABS: [(Tab, &str); 5] = [
     (Tab::Overview, "Overview"),
     (Tab::Players, "Players"),
     (Tab::Settings, "Settings"),
     (Tab::Backups, "Backups"),
+    (Tab::Plugins, "Plugins"),
 ];
 
 const MODES: [(&str, &str); 3] = [
@@ -151,6 +156,7 @@ pub(super) enum Event {
         config: Option<Value>,
         backups: Vec<Backup>,
         service: bool,
+        plugins: Option<Plugins>,
     },
     Applied(Result<Applied, Problem>),
     /// The Add a server on another computer dialog's check, and the server it added.
@@ -258,6 +264,10 @@ pub(super) struct Servers {
     restart_needed: BTreeSet<String>,
     backups: Vec<Backup>,
     confirm_restore: Option<String>,
+    /// The open server's plugins (None: its horizon-server doesn't list them), and the one whose Delete
+    /// waits for a second press.
+    plugins: Option<Plugins>,
+    confirm_remove_plugin: Option<String>,
     confirm_delete: bool,
     service: Option<bool>,
     update: Option<Value>,
@@ -310,6 +320,8 @@ impl Servers {
             restart_needed: BTreeSet::new(),
             backups: Vec::new(),
             confirm_restore: None,
+            plugins: None,
+            confirm_remove_plugin: None,
             confirm_delete: false,
             service: None,
             update: None,
@@ -512,11 +524,13 @@ impl Launcher {
             let config = servers::config(&dir);
             let backups = servers::backups(&dir).unwrap_or_default();
             let service = servers::service_installed(&dir);
+            let plugins = servers::plugins(&dir);
             let _ = tx.send(Event::Details {
                 dir,
                 config,
                 backups,
                 service,
+                plugins,
             });
         });
     }
@@ -718,11 +732,13 @@ impl Launcher {
                 config,
                 backups,
                 service,
+                plugins,
             } => {
                 if s.open.as_ref() == Some(&dir) {
                     s.config = config;
                     s.backups = backups;
                     s.service = Some(service);
+                    s.plugins = plugins;
                 }
             }
             Event::Deleted { dir, result } => {
@@ -1798,9 +1814,15 @@ impl Launcher {
         }
         page = page.child(self.stats(&status));
         let this = cx.entity().downgrade();
+        let plugins = self.has_plugins();
+        let tabs: Vec<(Tab, &str)> = TABS
+            .iter()
+            .copied()
+            .filter(|&(tab, _)| tab != Tab::Plugins || plugins)
+            .collect();
         page = page.child(div().flex().child(segments(
             "server-tabs",
-            &TABS,
+            &tabs,
             self.servers.tab,
             &t,
             move |tab, _, cx| {
@@ -1816,6 +1838,7 @@ impl Launcher {
             Tab::Players => self.players_tab(dir, &status, cx),
             Tab::Settings => self.settings_tab(&status, cx),
             Tab::Backups => self.backups_tab(&status, cx),
+            Tab::Plugins => self.plugins_tab(&status, cx),
         };
         page.child(body)
     }

@@ -103,6 +103,11 @@ The opening, then Play ([clip](docs/opening.webm)):
   address and Tailscale; friends get that computer's address. A computer that doesn't answer
   shows "Can't reach its computer" with **Try again**, and the server there keeps running when the
   launcher quits.
+  **Plugins** appears for a server whose engine loads plugins from its `plugins/` folder (a
+  Paper-style engine on Horizon): each plugin with its version, **Add plugin…** (a `.so`, or `.dll`
+  on Windows; the server loads it while it runs), **Reload now**, **Turn off** / **Turn on** (the
+  file is renamed `.disabled`) and **Delete**. It runs `horizon-server plugins`, so it works the
+  same for a server on another computer: the file goes over the same `ssh`.
   **Friends over the internet** (on Overview) uses Tailscale: it says whether Tailscale is
   installed and signed in (with Install, Sign in and Check again; signing in is always yours, in
   Tailscale's own app or page), shows this computer's Tailscale name and address with **Copy**,

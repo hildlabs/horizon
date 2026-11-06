@@ -11,10 +11,11 @@ use horizon_theme::glass::{fill, ink, radius};
 const SIDE: f32 = 320.;
 
 /// The tabs under the server's glass: the mockup shows the Overview's parts on the page itself.
-const LOWER_TABS: [(Tab, &str); 3] = [
+const LOWER_TABS: [(Tab, &str); 4] = [
     (Tab::Players, "Players"),
     (Tab::Settings, "Settings"),
     (Tab::Backups, "Backups"),
+    (Tab::Plugins, "Plugins"),
 ];
 
 /// A dot's tone for a server's state.
@@ -782,30 +783,38 @@ impl Launcher {
     /// The server's Players, Settings and Backups (not in the mockup), on a glass under it.
     fn glass_server_tabs(&mut self, dir: &Path, status: &Status, cx: &mut Context<Self>) -> Div {
         let t = self.theme;
-        if self.servers.tab == Tab::Overview {
+        let plugins = self.has_plugins();
+        if self.servers.tab == Tab::Overview || (self.servers.tab == Tab::Plugins && !plugins) {
             self.servers.tab = Tab::Players;
         }
-        let strip = div()
-            .flex()
-            .items_center()
-            .gap(px(4.))
-            .children(LOWER_TABS.iter().map(|&(tab, label)| {
-                ui::tab(
-                    SharedString::from(format!("server-tab-{label}")),
-                    tr(label),
-                    self.servers.tab == tab,
-                    &t,
-                )
-                .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
-                    this.servers.tab = tab;
-                    this.servers.confirm_restore = None;
-                    cx.notify();
-                }))
-            }));
-        let players = !matches!(self.servers.tab, Tab::Settings | Tab::Backups);
+        let strip = div().flex().items_center().gap(px(4.)).children(
+            LOWER_TABS
+                .iter()
+                .filter(move |&&(tab, _)| tab != Tab::Plugins || plugins)
+                .map(|&(tab, label)| {
+                    ui::tab(
+                        SharedString::from(format!("server-tab-{label}")),
+                        tr(label),
+                        self.servers.tab == tab,
+                        &t,
+                    )
+                    .on_click(cx.listener(
+                        move |this, _: &ClickEvent, _, cx| {
+                            this.servers.tab = tab;
+                            this.servers.confirm_restore = None;
+                            cx.notify();
+                        },
+                    ))
+                }),
+        );
+        let players = !matches!(
+            self.servers.tab,
+            Tab::Settings | Tab::Backups | Tab::Plugins
+        );
         let body = match self.servers.tab {
             Tab::Settings => self.settings_tab(status, cx),
             Tab::Backups => self.backups_tab(status, cx),
+            Tab::Plugins => self.plugins_tab(status, cx),
             _ => self.players_tab(dir, status, cx),
         };
         glass::plate(radius::PANEL)

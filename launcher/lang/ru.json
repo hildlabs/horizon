@@ -1189,5 +1189,17 @@
   "Connecting…": "Подключение…",
   "Can't reach its computer": "Его компьютер недоступен",
   "Friends join with": "Друзья подключаются по",
-  "That computer's address: Multiplayer, Add server, paste. Its firewall lets the port through.": "Адрес этого компьютера: Сетевая игра, Добавить сервер, вставить. Его файрвол должен пропускать порт."
+  "That computer's address: Multiplayer, Add server, paste. Its firewall lets the port through.": "Адрес этого компьютера: Сетевая игра, Добавить сервер, вставить. Его файрвол должен пропускать порт.",
+  "Add plugin…": "Добавить плагин…",
+  "A plugin is a .{library} file. The server loads a new or changed one while it runs.": "Плагин — это файл .{library}. Сервер загружает новый или изменённый плагин на ходу.",
+  "No plugins yet.": "Плагинов пока нет.",
+  "Reload now": "Перезагрузить",
+  "Reloaded {name}.": "{name} перезагружен.",
+  "Turn off": "Выключить",
+  "Turn on": "Включить",
+  "Plugins": "Плагины",
+  "{file} isn't a plugin for this server: it takes .{library} files.": "{file} не подходит этому серверу: он принимает файлы .{library}.",
+  "Adding plugins": "Добавление плагинов",
+  "Added {files}. The server loads plugins while it runs.": "{files} добавлен. Сервер загружает плагины на ходу.",
+  "Deleted {name}.": "{name} удалён."
 }

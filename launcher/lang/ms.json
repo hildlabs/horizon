@@ -1189,5 +1189,17 @@
   "Connecting…": "Connecting…",
   "Can't reach its computer": "Can't reach its computer",
   "Friends join with": "Friends join with",
-  "That computer's address: Multiplayer, Add server, paste. Its firewall lets the port through.": "That computer's address: Multiplayer, Add server, paste. Its firewall lets the port through."
+  "That computer's address: Multiplayer, Add server, paste. Its firewall lets the port through.": "That computer's address: Multiplayer, Add server, paste. Its firewall lets the port through.",
+  "Add plugin…": "Add plugin…",
+  "A plugin is a .{library} file. The server loads a new or changed one while it runs.": "A plugin is a .{library} file. The server loads a new or changed one while it runs.",
+  "No plugins yet.": "No plugins yet.",
+  "Reload now": "Reload now",
+  "Reloaded {name}.": "Reloaded {name}.",
+  "Turn off": "Turn off",
+  "Turn on": "Turn on",
+  "Plugins": "Plugins",
+  "{file} isn't a plugin for this server: it takes .{library} files.": "{file} isn't a plugin for this server: it takes .{library} files.",
+  "Adding plugins": "Adding plugins",
+  "Added {files}. The server loads plugins while it runs.": "Added {files}. The server loads plugins while it runs.",
+  "Deleted {name}.": "Deleted {name}."
 }
