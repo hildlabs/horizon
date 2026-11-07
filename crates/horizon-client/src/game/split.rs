@@ -363,7 +363,7 @@ impl<'a> Split<'a> {
         old.release_surface();
         let api = self.host.settings.horizon.api;
         let batching = self.host.settings.horizon.translucent_batching;
-        let shader_pack = super::shader_packs::picked_pack_draws_flat(&self.host.settings);
+        let shader_pack = super::shader_packs::picked_pack_shape(&self.host.settings);
         let built = build_renderer(
             window.clone(),
             true,
@@ -447,7 +447,7 @@ impl<'a> Split<'a> {
         old.take_back(main.compositor);
         let api = self.host.settings.horizon.api;
         let batching = self.host.settings.horizon.translucent_batching;
-        let shader_pack = super::shader_packs::picked_pack_draws_flat(&self.host.settings);
+        let shader_pack = super::shader_packs::picked_pack_shape(&self.host.settings);
         let built = build_renderer(
             window.clone(),
             false,
@@ -874,11 +874,16 @@ impl Game<'_> {
         for key in std::mem::take(&mut self.physical_keys) {
             self.native_key_event(key, false, false);
         }
-        // Only what the keyboard held: this player's pad keeps its presses.
-        for key in self
+        // Only what the keyboard held, and a script acting as it: this player's pad keeps its
+        // presses.
+        let mut released = self
             .keys
-            .release_source(horizon_client::held::Source::Keyboard)
-        {
+            .release_source(horizon_client::held::Source::Keyboard);
+        released.extend(
+            self.keys
+                .release_source(horizon_client::held::Source::Agent),
+        );
+        for key in released {
             if let Err(e) = self.mapped_key(
                 key,
                 false,
@@ -894,8 +899,11 @@ impl Game<'_> {
         }
         self.drag_button = None;
         self.modifiers = Default::default();
-        self.left = false;
-        self.right = false;
+        // A press this player's pad holds goes on, as for its keys.
+        self.left = self
+            .pad
+            .holds_action(&self.settings.controller, "key.attack");
+        self.right = self.pad.holds_action(&self.settings.controller, "key.use");
         self.inventory_mouse_release(false);
         self.inventory_mouse_release(true);
         self.inventory_pick_release();
